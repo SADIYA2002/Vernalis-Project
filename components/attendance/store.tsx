@@ -22,6 +22,7 @@ import {
   importStorageJson,
   STORAGE_KEY,
 } from "@/lib/attendance-storage"
+import { apiClient } from "@/lib/api-client"
 
 export interface Toast {
   id: number
@@ -46,7 +47,7 @@ export interface StoreValue {
   pushToast: (title: string, description?: string, tone?: Toast["tone"]) => void
 
   isLoaded: boolean
-  resetData: () => void
+  resetData: () => Promise<void>
   exportData: () => void
   importData: (jsonString: string) => boolean
 
@@ -56,7 +57,7 @@ export interface StoreValue {
     status: AttendanceStatus
     checkIn?: string | null
     checkOut?: string | null
-  }) => void
+  }) => Promise<void>
 
   submitCorrection: (input: {
     employeeId: string
@@ -66,8 +67,9 @@ export interface StoreValue {
     requestedCheckIn: string | null
     requestedCheckOut: string | null
     reason: string
-  }) => void
-  reviewCorrection: (id: string, approve: boolean, reviewerId: string, comment: string) => void
+  }) => Promise<void>
+
+  reviewCorrection: (id: string, approve: boolean, reviewerId: string, comment: string) => Promise<void>
 
   submitLeave: (input: {
     employeeId: string
@@ -75,8 +77,9 @@ export interface StoreValue {
     from: string
     to: string
     reason: string
-  }) => void
-  reviewLeave: (id: string, approve: boolean, reviewerId: string, comment: string) => void
+  }) => Promise<void>
+
+  reviewLeave: (id: string, approve: boolean, reviewerId: string, comment: string) => Promise<void>
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
@@ -109,16 +112,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
 
-  // Load from localStorage on client mount (avoids Next.js SSR hydration mismatch)
+  // Load from Backend API /api/bootstrap on client mount (with local storage fallback)
   useEffect(() => {
-    const data = loadStorage()
-    setRoleState(data.session.role)
-    setCurrentUserIdState(data.session.currentUserId)
-    setRecords(data.records)
-    setCorrections(data.corrections)
-    setLeaves(data.leaves)
-    setBalances(data.balances)
-    setIsLoaded(true)
+    let active = true
+    async function loadInitialData() {
+      // First load local storage cache so UI renders immediately
+      const cached = loadStorage()
+      if (active) {
+        setRoleState(cached.session.role)
+        setCurrentUserIdState(cached.session.currentUserId)
+        setRecords(cached.records)
+        setCorrections(cached.corrections)
+        setLeaves(cached.leaves)
+        setBalances(cached.balances)
+        setIsLoaded(true)
+      }
+
+      // Then fetch latest from API route
+      try {
+        const bootstrap = await apiClient.getBootstrap()
+        if (active && bootstrap) {
+          setRecords(bootstrap.records)
+          setCorrections(bootstrap.corrections)
+          setLeaves(bootstrap.leaves)
+          setBalances(bootstrap.balances)
+          saveStorage({
+            version: 1,
+            updatedAt: bootstrap.lastUpdated,
+            records: bootstrap.records,
+            corrections: bootstrap.corrections,
+            leaves: bootstrap.leaves,
+            balances: bootstrap.balances,
+            session: { role: cached.session.role, currentUserId: cached.session.currentUserId },
+          })
+        }
+      } catch (err) {
+        console.warn("[StoreProvider] Failed to fetch /api/bootstrap, using local cache:", err)
+      }
+    }
+
+    loadInitialData()
+    return () => {
+      active = false
+    }
   }, [])
 
   // Cross-tab synchronization via browser storage events
@@ -179,16 +215,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persistCurrent({ session: { role, currentUserId: nextUserId } })
   }
 
-  function upsertRecordAndPersist(next: AttendanceRecord) {
-    setRecords((prev) => {
-      const idx = prev.findIndex((r) => r.employeeId === next.employeeId && r.date === next.date)
-      const nextRecords = idx === -1 ? [...prev, next] : prev.map((r, i) => (i === idx ? next : r))
-      persistCurrent({ records: nextRecords })
-      return nextRecords
-    })
-  }
-
-  function resetData() {
+  async function resetData() {
+    try {
+      await apiClient.resetServer()
+    } catch {
+      // server reset error
+    }
     const seedData = resetStorage()
     setRoleState(seedData.session.role)
     setCurrentUserIdState(seedData.session.currentUserId)
@@ -250,8 +282,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     exportData,
     importData,
 
-    markAttendance({ employeeId, date, status, checkIn, checkOut }) {
-      upsertRecordAndPersist({
+    async markAttendance({ employeeId, date, status, checkIn, checkOut }) {
+      const optimisticRecord: AttendanceRecord = {
         id: `${employeeId}-${date}`,
         employeeId,
         date,
@@ -260,70 +292,121 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         checkOut: checkOut ?? null,
         workedHours: workedHoursFrom(checkIn, checkOut),
         lateMinutes: lateMinutesFrom(checkIn),
+      }
+
+      setRecords((prev) => {
+        const idx = prev.findIndex((r) => r.employeeId === employeeId && r.date === date)
+        const nextRecords = idx === -1 ? [...prev, optimisticRecord] : prev.map((r, i) => (i === idx ? optimisticRecord : r))
+        persistCurrent({ records: nextRecords })
+        return nextRecords
       })
-      pushToast("Attendance marked", `Saved as ${status.replace("-", " ")} for ${date} (persisted).`)
+      pushToast("Attendance marked", `Saved as ${status.replace("-", " ")} for ${date}.`)
+
+      try {
+        const saved = await apiClient.markAttendance({ employeeId, date, status, checkIn, checkOut })
+        setRecords((prev) => {
+          const idx = prev.findIndex((r) => r.employeeId === employeeId && r.date === date)
+          const nextRecords = idx === -1 ? [...prev, saved] : prev.map((r, i) => (i === idx ? saved : r))
+          persistCurrent({ records: nextRecords })
+          return nextRecords
+        })
+      } catch (err) {
+        console.warn("[StoreProvider] API markAttendance error:", err)
+      }
     },
 
-    submitCorrection(input) {
-      const id = `cor-${Date.now()}`
-      const newCorrection: CorrectionRequest = {
-        id,
+    async submitCorrection(input) {
+      const tempId = `cor-${Date.now()}`
+      const optimisticCorrection: CorrectionRequest = {
+        id: tempId,
         ...input,
         state: "pending",
         submittedAt: new Date().toISOString(),
       }
+
       setCorrections((prev) => {
-        const nextCorrections = [newCorrection, ...prev]
+        const nextCorrections = [optimisticCorrection, ...prev]
         persistCurrent({ corrections: nextCorrections })
         return nextCorrections
       })
       pushToast("Correction submitted", "Your manager will review the request.", "info")
-    },
 
-    reviewCorrection(id, approve, reviewerId, comment) {
-      const nextCorrections = corrections.map((c) =>
-        c.id === id
-          ? { ...c, state: approve ? ("approved" as const) : ("rejected" as const), reviewedBy: reviewerId, reviewComment: comment }
-          : c,
-      )
-      setCorrections(nextCorrections)
-
-      let nextRecords = records
-      const cor = corrections.find((c) => c.id === id)
-      if (approve && cor) {
-        const updatedRecord: AttendanceRecord = {
-          id: `${cor.employeeId}-${cor.date}`,
-          employeeId: cor.employeeId,
-          date: cor.date,
-          status: cor.toStatus,
-          checkIn: cor.requestedCheckIn,
-          checkOut: cor.requestedCheckOut,
-          workedHours: workedHoursFrom(cor.requestedCheckIn, cor.requestedCheckOut),
-          lateMinutes: lateMinutesFrom(cor.requestedCheckIn),
-          corrected: true,
-        }
-        const idx = records.findIndex((r) => r.employeeId === updatedRecord.employeeId && r.date === updatedRecord.date)
-        nextRecords = idx === -1 ? [...records, updatedRecord] : records.map((r, i) => (i === idx ? updatedRecord : r))
-        setRecords(nextRecords)
+      try {
+        const created = await apiClient.submitCorrection(input)
+        setCorrections((prev) => {
+          const nextCorrections = prev.map((c) => (c.id === tempId ? created : c))
+          persistCurrent({ corrections: nextCorrections })
+          return nextCorrections
+        })
+      } catch (err) {
+        console.warn("[StoreProvider] API submitCorrection error:", err)
       }
-
-      persistCurrent({
-        corrections: nextCorrections,
-        records: nextRecords,
-      })
-
-      pushToast(
-        approve ? "Correction approved" : "Correction rejected",
-        approve ? "The attendance record has been updated and persisted." : "The employee has been notified.",
-        approve ? "success" : "warn",
-      )
     },
 
-    submitLeave({ employeeId, type, from, to, reason }) {
+    async reviewCorrection(id, approve, reviewerId, comment) {
+      try {
+        const res = await apiClient.reviewCorrection(id, { approve, reviewerId, comment })
+        setCorrections((prev) => {
+          const nextCorrections = prev.map((c) => (c.id === id ? res.correction : c))
+          persistCurrent({ corrections: nextCorrections })
+          return nextCorrections
+        })
+
+        if (res.updatedRecord) {
+          setRecords((prev) => {
+            const idx = prev.findIndex((r) => r.employeeId === res.updatedRecord!.employeeId && r.date === res.updatedRecord!.date)
+            const nextRecords = idx === -1 ? [...prev, res.updatedRecord!] : prev.map((r, i) => (i === idx ? res.updatedRecord! : r))
+            persistCurrent({ records: nextRecords })
+            return nextRecords
+          })
+        }
+
+        pushToast(
+          approve ? "Correction approved" : "Correction rejected",
+          approve ? "The attendance record has been updated on the server." : "The employee has been notified.",
+          approve ? "success" : "warn",
+        )
+      } catch (err) {
+        console.warn("[StoreProvider] API reviewCorrection error, falling back locally:", err)
+        // Fallback local update
+        const nextCorrections = corrections.map((c) =>
+          c.id === id
+            ? { ...c, state: approve ? ("approved" as const) : ("rejected" as const), reviewedBy: reviewerId, reviewComment: comment }
+            : c,
+        )
+        setCorrections(nextCorrections)
+
+        let nextRecords = records
+        const cor = corrections.find((c) => c.id === id)
+        if (approve && cor) {
+          const updatedRecord: AttendanceRecord = {
+            id: `${cor.employeeId}-${cor.date}`,
+            employeeId: cor.employeeId,
+            date: cor.date,
+            status: cor.toStatus,
+            checkIn: cor.requestedCheckIn,
+            checkOut: cor.requestedCheckOut,
+            workedHours: workedHoursFrom(cor.requestedCheckIn, cor.requestedCheckOut),
+            lateMinutes: lateMinutesFrom(cor.requestedCheckIn),
+            corrected: true,
+          }
+          const idx = records.findIndex((r) => r.employeeId === updatedRecord.employeeId && r.date === updatedRecord.date)
+          nextRecords = idx === -1 ? [...records, updatedRecord] : records.map((r, i) => (i === idx ? updatedRecord : r))
+          setRecords(nextRecords)
+        }
+
+        persistCurrent({
+          corrections: nextCorrections,
+          records: nextRecords,
+        })
+      }
+    },
+
+    async submitLeave({ employeeId, type, from, to, reason }) {
       const days = datesBetween(from, to).filter(isWorkingDay).length
-      const id = `lv-${Date.now()}`
-      const newLeave: LeaveRequest = {
-        id,
+      const tempId = `lv-${Date.now()}`
+      const optimisticLeave: LeaveRequest = {
+        id: tempId,
         employeeId,
         type,
         from,
@@ -333,72 +416,111 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         state: "pending",
         submittedAt: new Date().toISOString(),
       }
+
       setLeaves((prev) => {
-        const nextLeaves = [newLeave, ...prev]
+        const nextLeaves = [optimisticLeave, ...prev]
         persistCurrent({ leaves: nextLeaves })
         return nextLeaves
       })
       pushToast("Leave applied", `${days} working day(s) sent for approval.`, "info")
+
+      try {
+        const created = await apiClient.submitLeave({ employeeId, type, from, to, reason })
+        setLeaves((prev) => {
+          const nextLeaves = prev.map((l) => (l.id === tempId ? created : l))
+          persistCurrent({ leaves: nextLeaves })
+          return nextLeaves
+        })
+      } catch (err) {
+        console.warn("[StoreProvider] API submitLeave error:", err)
+      }
     },
 
-    reviewLeave(id, approve, reviewerId, comment) {
-      const lv = leaves.find((l) => l.id === id)
-      const nextLeaves = leaves.map((l) =>
-        l.id === id
-          ? { ...l, state: approve ? ("approved" as const) : ("rejected" as const), reviewedBy: reviewerId, reviewComment: comment }
-          : l,
-      )
-      setLeaves(nextLeaves)
-
-      let nextRecords = records
-      let nextBalances = balances
-
-      if (approve && lv) {
-        // Apply leave to attendance records for working days in range
-        const leaveDates = datesBetween(lv.from, lv.to).filter(isWorkingDay)
-        const updatedRecords = [...records]
-
-        leaveDates.forEach((date) => {
-          const rec: AttendanceRecord = {
-            id: `${lv.employeeId}-${date}`,
-            employeeId: lv.employeeId,
-            date,
-            status: "leave",
-            checkIn: null,
-            checkOut: null,
-            workedHours: 0,
-            lateMinutes: 0,
-            note: POLICY.leaveTypes[lv.type].label,
-          }
-          const idx = updatedRecords.findIndex((r) => r.employeeId === rec.employeeId && r.date === rec.date)
-          if (idx === -1) updatedRecords.push(rec)
-          else updatedRecords[idx] = rec
+    async reviewLeave(id, approve, reviewerId, comment) {
+      try {
+        const res = await apiClient.reviewLeave(id, { approve, reviewerId, comment })
+        setLeaves((prev) => {
+          const nextLeaves = prev.map((l) => (l.id === id ? res.leave : l))
+          persistCurrent({ leaves: nextLeaves })
+          return nextLeaves
         })
 
-        nextRecords = updatedRecords
-        setRecords(nextRecords)
-
-        // Deduct paid leave balance
-        if (lv.type !== "unpaid") {
-          const paidType = lv.type as "casual" | "sick" | "earned"
-          nextBalances = balances.map((b) =>
-            b.employeeId === lv.employeeId ? { ...b, [paidType]: Math.max(0, b[paidType] - lv.days) } : b,
-          )
-          setBalances(nextBalances)
+        if (res.updatedRecords && res.updatedRecords.length > 0) {
+          setRecords((prev) => {
+            const updated = [...prev]
+            res.updatedRecords.forEach((rec) => {
+              const idx = updated.findIndex((r) => r.employeeId === rec.employeeId && r.date === rec.date)
+              if (idx === -1) updated.push(rec)
+              else updated[idx] = rec
+            })
+            persistCurrent({ records: updated })
+            return updated
+          })
         }
+
+        if (res.updatedBalances) {
+          setBalances(res.updatedBalances)
+          persistCurrent({ balances: res.updatedBalances })
+        }
+
+        pushToast(
+          approve ? "Leave approved" : "Leave rejected",
+          approve ? "Balances and attendance records updated on the server." : "The employee has been notified.",
+          approve ? "success" : "warn",
+        )
+      } catch (err) {
+        console.warn("[StoreProvider] API reviewLeave error, falling back locally:", err)
+        // Fallback local update
+        const lv = leaves.find((l) => l.id === id)
+        const nextLeaves = leaves.map((l) =>
+          l.id === id
+            ? { ...l, state: approve ? ("approved" as const) : ("rejected" as const), reviewedBy: reviewerId, reviewComment: comment }
+            : l,
+        )
+        setLeaves(nextLeaves)
+
+        let nextRecords = records
+        let nextBalances = balances
+
+        if (approve && lv) {
+          const leaveDates = datesBetween(lv.from, lv.to).filter(isWorkingDay)
+          const updatedRecords = [...records]
+
+          leaveDates.forEach((date) => {
+            const rec: AttendanceRecord = {
+              id: `${lv.employeeId}-${date}`,
+              employeeId: lv.employeeId,
+              date,
+              status: "leave",
+              checkIn: null,
+              checkOut: null,
+              workedHours: 0,
+              lateMinutes: 0,
+              note: POLICY.leaveTypes[lv.type].label,
+            }
+            const idx = updatedRecords.findIndex((r) => r.employeeId === rec.employeeId && r.date === rec.date)
+            if (idx === -1) updatedRecords.push(rec)
+            else updatedRecords[idx] = rec
+          })
+
+          nextRecords = updatedRecords
+          setRecords(nextRecords)
+
+          if (lv.type !== "unpaid") {
+            const paidType = lv.type as "casual" | "sick" | "earned"
+            nextBalances = balances.map((b) =>
+              b.employeeId === lv.employeeId ? { ...b, [paidType]: Math.max(0, b[paidType] - lv.days) } : b,
+            )
+            setBalances(nextBalances)
+          }
+        }
+
+        persistCurrent({
+          leaves: nextLeaves,
+          records: nextRecords,
+          balances: nextBalances,
+        })
       }
-
-      persistCurrent({
-        leaves: nextLeaves,
-        records: nextRecords,
-        balances: nextBalances,
-      })
-
-      pushToast(
-        approve ? "Leave approved" : "Leave rejected",
-        approve ? "Balances and attendance have been updated and persisted." : "The employee has been notified.",
-        approve ? "success" : "warn",
-      )
     },
   }
 
