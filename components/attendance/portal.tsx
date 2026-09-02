@@ -1,16 +1,21 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   CalendarCheck,
   CalendarDays,
   ClipboardCheck,
+  Database,
+  Download,
   FileSpreadsheet,
   Gauge,
+  HardDrive,
   LayoutGrid,
   ListChecks,
   PlaneTakeoff,
+  RotateCcw,
   ScrollText,
+  Upload,
   Users,
   X,
 } from "lucide-react"
@@ -92,6 +97,135 @@ function Toasts() {
           </button>
         </div>
       ))}
+    </div>
+  )
+}
+
+function PersistenceMenu() {
+  const { resetData, exportData, importData } = useStore()
+  const [open, setOpen] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setConfirmReset(false)
+      }
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside)
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [open])
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const content = event.target?.result as string
+      if (content) {
+        importData(content)
+        setOpen(false)
+      }
+    }
+    reader.readAsText(file)
+    // reset input
+    e.target.value = ""
+  }
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => {
+          setOpen((v) => !v)
+          setConfirmReset(false)
+        }}
+        className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent focus:outline-none"
+        title="Local storage data persistence & backup tools"
+      >
+        <span className="flex size-2 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
+        <HardDrive className="size-3.5 text-muted-foreground" />
+        <span className="hidden sm:inline">Persisted</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl">
+          <div className="border-b border-border/80 px-2 pb-2 pt-1">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              <Database className="size-3.5 text-primary" /> Data Persistence
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              All records, requests, balances and sessions survive page refreshes.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-0.5 py-1.5">
+            <button
+              onClick={() => {
+                exportData()
+                setOpen(false)
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition hover:bg-accent"
+            >
+              <Download className="size-3.5 text-muted-foreground" />
+              <span>Export backup JSON</span>
+            </button>
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition hover:bg-accent"
+            >
+              <Upload className="size-3.5 text-muted-foreground" />
+              <span>Import backup JSON</span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </div>
+
+          <div className="border-t border-border/80 pt-1.5">
+            {!confirmReset ? (
+              <button
+                onClick={() => setConfirmReset(true)}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-status-absent-foreground transition hover:bg-status-absent/10"
+              >
+                <RotateCcw className="size-3.5 text-status-absent-foreground" />
+                <span>Reset to demo data</span>
+              </button>
+            ) : (
+              <div className="flex flex-col gap-1.5 rounded-lg bg-muted/60 p-2">
+                <p className="text-[11px] font-medium text-foreground">Restore initial demo state?</p>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => {
+                      resetData()
+                      setOpen(false)
+                      setConfirmReset(false)
+                    }}
+                    className="flex-1 rounded-md bg-destructive px-2 py-1 text-center text-xs font-semibold text-destructive-foreground shadow-sm hover:opacity-90"
+                  >
+                    Yes, reset
+                  </button>
+                  <button
+                    onClick={() => setConfirmReset(false)}
+                    className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-accent"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -215,21 +349,25 @@ function Shell() {
               ))}
             </div>
 
-            {/* Identity selector for role */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Acting as</span>
-              <select
-                value={currentUserId}
-                onChange={(e) => setCurrentUserId(e.target.value)}
-                disabled={identityOptions.length <= 1}
-                className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm font-medium text-foreground shadow-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:opacity-70"
-              >
-                {identityOptions.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name} · {o.department}
-                  </option>
-                ))}
-              </select>
+            {/* Right Header Area: Identity selector & Persistence Tools */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Acting as</span>
+                <select
+                  value={currentUserId}
+                  onChange={(e) => setCurrentUserId(e.target.value)}
+                  disabled={identityOptions.length <= 1}
+                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm font-medium text-foreground shadow-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:opacity-70"
+                >
+                  {identityOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name} · {o.department}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <PersistenceMenu />
             </div>
           </div>
 

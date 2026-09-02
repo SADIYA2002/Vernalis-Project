@@ -126,7 +126,7 @@ function Analytics() {
                 <Tooltip
                   cursor={{ fill: "var(--muted)" }}
                   contentStyle={{ borderRadius: 8, border: "1px solid var(--border)", background: "var(--card)", fontSize: 12 }}
-                  formatter={(v: number) => [`${v}%`, "Attendance"]}
+                  formatter={(v: any) => [`${v}%`, "Attendance"]}
                 />
                 <Bar dataKey="pct" radius={[6, 6, 0, 0]} fill="var(--color-chart-1)" />
               </BarChart>
@@ -150,7 +150,7 @@ function Analytics() {
                 <YAxis tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} unit="%" />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, border: "1px solid var(--border)", background: "var(--card)", fontSize: 12 }}
-                  formatter={(v: number) => [`${v}%`, "Absence rate"]}
+                  formatter={(v: any) => [`${v}%`, "Absence rate"]}
                 />
                 <Area type="monotone" dataKey="rate" stroke="var(--color-chart-4)" strokeWidth={2} fill="url(#absGrad)" />
               </AreaChart>
@@ -170,7 +170,7 @@ function Analytics() {
               <Tooltip
                 cursor={{ fill: "var(--muted)" }}
                 contentStyle={{ borderRadius: 8, border: "1px solid var(--border)", background: "var(--card)", fontSize: 12 }}
-                formatter={(v: number) => [v, "Late marks"]}
+                formatter={(v: any) => [v, "Late marks"]}
               />
               <Bar dataKey="late" radius={[6, 6, 0, 0]}>
                 {lateData.map((d, i) => (

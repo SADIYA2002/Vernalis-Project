@@ -182,13 +182,13 @@ export function datesBetween(start: string, end: string): string[] {
 
 export function isWorkingDay(date: string): boolean {
   const day = new Date(date + "T00:00:00").getDay()
-  return POLICY.workWeek.includes(day) && !HOLIDAYS[date]
+  return (POLICY.workWeek as readonly number[]).includes(day) && !HOLIDAYS[date]
 }
 
 export function baseStatusFor(date: string): AttendanceStatus | null {
   const day = new Date(date + "T00:00:00").getDay()
   if (HOLIDAYS[date]) return "holiday"
-  if (!POLICY.workWeek.includes(day)) return "weekend"
+  if (!(POLICY.workWeek as readonly number[]).includes(day)) return "weekend"
   return null
 }
 

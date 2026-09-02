@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   type AttendanceRecord,
   type AttendanceStatus,
@@ -10,22 +10,27 @@ import {
   type LeaveType,
   type Role,
   datesBetween,
-  generateAttendance,
-  generateLeaveBalances,
   isWorkingDay,
   POLICY,
-  seedCorrections,
-  seedLeaves,
 } from "@/lib/attendance-data"
+import {
+  type ChronoStorageSchema,
+  getDefaultSeedData,
+  loadStorage,
+  resetStorage,
+  saveStorage,
+  importStorageJson,
+  STORAGE_KEY,
+} from "@/lib/attendance-storage"
 
-interface Toast {
+export interface Toast {
   id: number
   title: string
   description?: string
   tone: "success" | "info" | "warn"
 }
 
-interface StoreValue {
+export interface StoreValue {
   role: Role
   setRole: (r: Role) => void
   currentUserId: string
@@ -38,6 +43,12 @@ interface StoreValue {
 
   toasts: Toast[]
   dismissToast: (id: number) => void
+  pushToast: (title: string, description?: string, tone?: Toast["tone"]) => void
+
+  isLoaded: boolean
+  resetData: () => void
+  exportData: () => void
+  importData: (jsonString: string) => boolean
 
   markAttendance: (input: {
     employeeId: string
@@ -87,31 +98,139 @@ function lateMinutesFrom(checkIn?: string | null): number {
 let toastSeq = 1
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<Role>("employee")
-  const [currentUserId, setCurrentUserId] = useState<string>("emp-01")
-  const [records, setRecords] = useState<AttendanceRecord[]>(() => generateAttendance())
-  const [corrections, setCorrections] = useState<CorrectionRequest[]>(() => seedCorrections())
-  const [leaves, setLeaves] = useState<LeaveRequest[]>(() => seedLeaves())
-  const [balances, setBalances] = useState<LeaveBalance[]>(() => generateLeaveBalances())
+  const seed = getDefaultSeedData()
+
+  const [role, setRoleState] = useState<Role>(seed.session.role)
+  const [currentUserId, setCurrentUserIdState] = useState<string>(seed.session.currentUserId)
+  const [records, setRecords] = useState<AttendanceRecord[]>(seed.records)
+  const [corrections, setCorrections] = useState<CorrectionRequest[]>(seed.corrections)
+  const [leaves, setLeaves] = useState<LeaveRequest[]>(seed.leaves)
+  const [balances, setBalances] = useState<LeaveBalance[]>(seed.balances)
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [isLoaded, setIsLoaded] = useState(false)
+
+  // Load from localStorage on client mount (avoids Next.js SSR hydration mismatch)
+  useEffect(() => {
+    const data = loadStorage()
+    setRoleState(data.session.role)
+    setCurrentUserIdState(data.session.currentUserId)
+    setRecords(data.records)
+    setCorrections(data.corrections)
+    setLeaves(data.leaves)
+    setBalances(data.balances)
+    setIsLoaded(true)
+  }, [])
+
+  // Cross-tab synchronization via browser storage events
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as ChronoStorageSchema
+          if (parsed && Array.isArray(parsed.records)) {
+            setRecords(parsed.records)
+            setCorrections(parsed.corrections)
+            setLeaves(parsed.leaves)
+            setBalances(parsed.balances)
+            if (parsed.session) {
+              setRoleState(parsed.session.role)
+              setCurrentUserIdState(parsed.session.currentUserId)
+            }
+          }
+        } catch {
+          // ignore corrupted cross-tab payload
+        }
+      }
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [])
 
   function pushToast(title: string, description?: string, tone: Toast["tone"] = "success") {
     const id = toastSeq++
     setToasts((t) => [...t, { id, title, description, tone }])
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200)
   }
+
   function dismissToast(id: number) {
     setToasts((t) => t.filter((x) => x.id !== id))
   }
 
-  function upsertRecord(next: AttendanceRecord) {
+  // Persist snapshot to storage helper
+  function persistCurrent(overrides: Partial<ChronoStorageSchema> = {}) {
+    saveStorage({
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      records: overrides.records ?? records,
+      corrections: overrides.corrections ?? corrections,
+      leaves: overrides.leaves ?? leaves,
+      balances: overrides.balances ?? balances,
+      session: overrides.session ?? { role, currentUserId },
+    })
+  }
+
+  function setRole(nextRole: Role) {
+    setRoleState(nextRole)
+    persistCurrent({ session: { role: nextRole, currentUserId } })
+  }
+
+  function setCurrentUserId(nextUserId: string) {
+    setCurrentUserIdState(nextUserId)
+    persistCurrent({ session: { role, currentUserId: nextUserId } })
+  }
+
+  function upsertRecordAndPersist(next: AttendanceRecord) {
     setRecords((prev) => {
       const idx = prev.findIndex((r) => r.employeeId === next.employeeId && r.date === next.date)
-      if (idx === -1) return [...prev, next]
-      const copy = prev.slice()
-      copy[idx] = next
-      return copy
+      const nextRecords = idx === -1 ? [...prev, next] : prev.map((r, i) => (i === idx ? next : r))
+      persistCurrent({ records: nextRecords })
+      return nextRecords
     })
+  }
+
+  function resetData() {
+    const seedData = resetStorage()
+    setRoleState(seedData.session.role)
+    setCurrentUserIdState(seedData.session.currentUserId)
+    setRecords(seedData.records)
+    setCorrections(seedData.corrections)
+    setLeaves(seedData.leaves)
+    setBalances(seedData.balances)
+    pushToast("Data reset", "Restored all attendance and leave data to initial demo state.", "info")
+  }
+
+  function exportData() {
+    try {
+      const data = loadStorage()
+      const json = JSON.stringify(data, null, 2)
+      const blob = new Blob([json], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `chrono-attendance-backup-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      pushToast("Backup downloaded", "Attendance data snapshot exported successfully.", "success")
+    } catch {
+      pushToast("Export failed", "Could not export attendance data.", "warn")
+    }
+  }
+
+  function importData(jsonString: string): boolean {
+    const res = importStorageJson(jsonString)
+    if (res.success && res.data) {
+      setRoleState(res.data.session.role)
+      setCurrentUserIdState(res.data.session.currentUserId)
+      setRecords(res.data.records)
+      setCorrections(res.data.corrections)
+      setLeaves(res.data.leaves)
+      setBalances(res.data.balances)
+      pushToast("Backup restored", "Attendance records and leave requests successfully loaded.", "success")
+      return true
+    } else {
+      pushToast("Import failed", res.error ?? "Invalid backup file format.", "warn")
+      return false
+    }
   }
 
   const value: StoreValue = {
@@ -125,9 +244,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     balances,
     toasts,
     dismissToast,
+    pushToast,
+    isLoaded,
+    resetData,
+    exportData,
+    importData,
 
     markAttendance({ employeeId, date, status, checkIn, checkOut }) {
-      upsertRecord({
+      upsertRecordAndPersist({
         id: `${employeeId}-${date}`,
         employeeId,
         date,
@@ -137,34 +261,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         workedHours: workedHoursFrom(checkIn, checkOut),
         lateMinutes: lateMinutesFrom(checkIn),
       })
-      pushToast("Attendance marked", `Saved as ${status.replace("-", " ")} for ${date}.`)
+      pushToast("Attendance marked", `Saved as ${status.replace("-", " ")} for ${date} (persisted).`)
     },
 
     submitCorrection(input) {
       const id = `cor-${Date.now()}`
-      setCorrections((prev) => [
-        {
-          id,
-          ...input,
-          state: "pending",
-          submittedAt: new Date().toISOString(),
-        },
-        ...prev,
-      ])
+      const newCorrection: CorrectionRequest = {
+        id,
+        ...input,
+        state: "pending",
+        submittedAt: new Date().toISOString(),
+      }
+      setCorrections((prev) => {
+        const nextCorrections = [newCorrection, ...prev]
+        persistCurrent({ corrections: nextCorrections })
+        return nextCorrections
+      })
       pushToast("Correction submitted", "Your manager will review the request.", "info")
     },
 
     reviewCorrection(id, approve, reviewerId, comment) {
-      setCorrections((prev) =>
-        prev.map((c) =>
-          c.id === id
-            ? { ...c, state: approve ? "approved" : "rejected", reviewedBy: reviewerId, reviewComment: comment }
-            : c,
-        ),
+      const nextCorrections = corrections.map((c) =>
+        c.id === id
+          ? { ...c, state: approve ? ("approved" as const) : ("rejected" as const), reviewedBy: reviewerId, reviewComment: comment }
+          : c,
       )
+      setCorrections(nextCorrections)
+
+      let nextRecords = records
       const cor = corrections.find((c) => c.id === id)
       if (approve && cor) {
-        upsertRecord({
+        const updatedRecord: AttendanceRecord = {
           id: `${cor.employeeId}-${cor.date}`,
           employeeId: cor.employeeId,
           date: cor.date,
@@ -174,11 +301,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           workedHours: workedHoursFrom(cor.requestedCheckIn, cor.requestedCheckOut),
           lateMinutes: lateMinutesFrom(cor.requestedCheckIn),
           corrected: true,
-        })
+        }
+        const idx = records.findIndex((r) => r.employeeId === updatedRecord.employeeId && r.date === updatedRecord.date)
+        nextRecords = idx === -1 ? [...records, updatedRecord] : records.map((r, i) => (i === idx ? updatedRecord : r))
+        setRecords(nextRecords)
       }
+
+      persistCurrent({
+        corrections: nextCorrections,
+        records: nextRecords,
+      })
+
       pushToast(
         approve ? "Correction approved" : "Correction rejected",
-        approve ? "The attendance record has been updated." : "The employee has been notified.",
+        approve ? "The attendance record has been updated and persisted." : "The employee has been notified.",
         approve ? "success" : "warn",
       )
     },
@@ -186,49 +322,81 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     submitLeave({ employeeId, type, from, to, reason }) {
       const days = datesBetween(from, to).filter(isWorkingDay).length
       const id = `lv-${Date.now()}`
-      setLeaves((prev) => [
-        { id, employeeId, type, from, to, days, reason, state: "pending", submittedAt: new Date().toISOString() },
-        ...prev,
-      ])
+      const newLeave: LeaveRequest = {
+        id,
+        employeeId,
+        type,
+        from,
+        to,
+        days,
+        reason,
+        state: "pending",
+        submittedAt: new Date().toISOString(),
+      }
+      setLeaves((prev) => {
+        const nextLeaves = [newLeave, ...prev]
+        persistCurrent({ leaves: nextLeaves })
+        return nextLeaves
+      })
       pushToast("Leave applied", `${days} working day(s) sent for approval.`, "info")
     },
 
     reviewLeave(id, approve, reviewerId, comment) {
       const lv = leaves.find((l) => l.id === id)
-      setLeaves((prev) =>
-        prev.map((l) =>
-          l.id === id
-            ? { ...l, state: approve ? "approved" : "rejected", reviewedBy: reviewerId, reviewComment: comment }
-            : l,
-        ),
+      const nextLeaves = leaves.map((l) =>
+        l.id === id
+          ? { ...l, state: approve ? ("approved" as const) : ("rejected" as const), reviewedBy: reviewerId, reviewComment: comment }
+          : l,
       )
+      setLeaves(nextLeaves)
+
+      let nextRecords = records
+      let nextBalances = balances
+
       if (approve && lv) {
-        // Apply leave to attendance records for working days in range.
-        datesBetween(lv.from, lv.to)
-          .filter(isWorkingDay)
-          .forEach((date) => {
-            upsertRecord({
-              id: `${lv.employeeId}-${date}`,
-              employeeId: lv.employeeId,
-              date,
-              status: "leave",
-              checkIn: null,
-              checkOut: null,
-              workedHours: 0,
-              lateMinutes: 0,
-              note: POLICY.leaveTypes[lv.type].label,
-            })
-          })
-        // Deduct paid leave balance.
+        // Apply leave to attendance records for working days in range
+        const leaveDates = datesBetween(lv.from, lv.to).filter(isWorkingDay)
+        const updatedRecords = [...records]
+
+        leaveDates.forEach((date) => {
+          const rec: AttendanceRecord = {
+            id: `${lv.employeeId}-${date}`,
+            employeeId: lv.employeeId,
+            date,
+            status: "leave",
+            checkIn: null,
+            checkOut: null,
+            workedHours: 0,
+            lateMinutes: 0,
+            note: POLICY.leaveTypes[lv.type].label,
+          }
+          const idx = updatedRecords.findIndex((r) => r.employeeId === rec.employeeId && r.date === rec.date)
+          if (idx === -1) updatedRecords.push(rec)
+          else updatedRecords[idx] = rec
+        })
+
+        nextRecords = updatedRecords
+        setRecords(nextRecords)
+
+        // Deduct paid leave balance
         if (lv.type !== "unpaid") {
-          setBalances((prev) =>
-            prev.map((b) => (b.employeeId === lv.employeeId ? { ...b, [lv.type]: b[lv.type] - lv.days } : b)),
+          const paidType = lv.type as "casual" | "sick" | "earned"
+          nextBalances = balances.map((b) =>
+            b.employeeId === lv.employeeId ? { ...b, [paidType]: Math.max(0, b[paidType] - lv.days) } : b,
           )
+          setBalances(nextBalances)
         }
       }
+
+      persistCurrent({
+        leaves: nextLeaves,
+        records: nextRecords,
+        balances: nextBalances,
+      })
+
       pushToast(
         approve ? "Leave approved" : "Leave rejected",
-        approve ? "Balances and attendance have been updated." : "The employee has been notified.",
+        approve ? "Balances and attendance have been updated and persisted." : "The employee has been notified.",
         approve ? "success" : "warn",
       )
     },
