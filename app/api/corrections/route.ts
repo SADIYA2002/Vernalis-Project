@@ -19,24 +19,24 @@ export async function GET(req: NextRequest) {
         { status: 403 },
       )
     }
-    const corrections = getCorrections({ employeeId: requestedEmployeeId, state })
+    const corrections = await getCorrections({ employeeId: requestedEmployeeId, state })
     return NextResponse.json(corrections)
   }
 
   if (user.role === "employee") {
-    const corrections = getCorrections({ employeeId: user.id, state })
+    const corrections = await getCorrections({ employeeId: user.id, state })
     return NextResponse.json(corrections)
   }
 
   if (user.role === "manager") {
     const team = directReports(user.id)
     const allowedIds = new Set([user.id, ...team.map((t) => t.id)])
-    const allCorrections = getCorrections({ state })
+    const allCorrections = await getCorrections({ state })
     return NextResponse.json(allCorrections.filter((c) => allowedIds.has(c.employeeId)))
   }
 
   // HR / Payroll
-  const corrections = getCorrections({ state })
+  const corrections = await getCorrections({ state })
   return NextResponse.json(corrections)
 }
 
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const correction = createCorrection({
+    const correction = await createCorrection({
       employeeId: user.role === "employee" ? user.id : employeeId,
       date,
       fromStatus: fromStatus as AttendanceStatus,

@@ -20,25 +20,25 @@ export async function GET(req: NextRequest) {
         { status: 403 },
       )
     }
-    const records = getAttendanceRecords({ employeeId: requestedEmployeeId, start, end })
+    const records = await getAttendanceRecords({ employeeId: requestedEmployeeId, start, end })
     return NextResponse.json(records)
   }
 
   // If no specific employee requested, scope by role
   if (user.role === "employee") {
-    const records = getAttendanceRecords({ employeeId: user.id, start, end })
+    const records = await getAttendanceRecords({ employeeId: user.id, start, end })
     return NextResponse.json(records)
   }
 
   if (user.role === "manager") {
     const team = directReports(user.id)
     const allowedIds = new Set([user.id, ...team.map((t) => t.id)])
-    const allRecords = getAttendanceRecords({ start, end })
+    const allRecords = await getAttendanceRecords({ start, end })
     return NextResponse.json(allRecords.filter((r) => allowedIds.has(r.employeeId)))
   }
 
   // HR and Payroll can view all
-  const records = getAttendanceRecords({ start, end })
+  const records = await getAttendanceRecords({ start, end })
   return NextResponse.json(records)
 }
 
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const record = upsertAttendance({
+    const record = await upsertAttendance({
       employeeId: user.role === "employee" ? user.id : employeeId,
       date,
       status: status as AttendanceStatus,

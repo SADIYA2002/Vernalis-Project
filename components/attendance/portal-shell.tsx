@@ -128,15 +128,16 @@ function Toasts() {
 }
 
 function PersistenceMenu() {
-  const { resetData, exportData, importData } = useStore()
+  const { exportData, importData, resetData, backend } = useStore()
   const [open, setOpen] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const isSupabase = backend === "supabase"
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setOpen(false)
         setConfirmReset(false)
       }
@@ -170,21 +171,42 @@ function PersistenceMenu() {
           setConfirmReset(false)
         }}
         className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent focus:outline-none"
-        title="Local storage data persistence & backup tools"
+        title={isSupabase ? "Connected to Supabase PostgreSQL cloud database" : "Data persistence (Supabase enabled)"}
       >
-        <span className="flex size-2 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" />
+        <span
+          className={cn(
+            "flex size-2 rounded-full ring-2",
+            isSupabase
+              ? "bg-emerald-500 ring-emerald-500/20"
+              : "bg-blue-500 ring-blue-500/20",
+          )}
+        />
         <HardDrive className="size-3.5 text-muted-foreground" />
-        <span className="hidden sm:inline">Data</span>
+        <span className="hidden sm:inline">{isSupabase ? "Supabase" : "Data"}</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl">
+        <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl">
           <div className="border-b border-border/80 px-2 pb-2 pt-1">
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-              <Database className="size-3.5 text-primary" /> Data Persistence
-            </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Records and requests survive page refreshes with local cache.
+            <div className="flex items-center justify-between">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                <Database className="size-3.5 text-primary" /> Data Persistence
+              </p>
+              <span
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
+                  isSupabase
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30"
+                    : "bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30",
+                )}
+              >
+                {isSupabase ? "Supabase Cloud" : "In-Memory DB"}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+              {isSupabase
+                ? "Connected to Supabase cloud PostgreSQL. Attendance and leaves persist to cloud tables."
+                : "Running in-memory database. Add NEXT_PUBLIC_SUPABASE_URL to connect Supabase."}
             </p>
           </div>
 

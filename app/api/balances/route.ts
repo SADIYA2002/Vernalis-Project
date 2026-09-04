@@ -18,23 +18,23 @@ export async function GET(req: NextRequest) {
         { status: 403 },
       )
     }
-    const balances = getLeaveBalances(requestedEmployeeId)
+    const balances = await getLeaveBalances(requestedEmployeeId)
     return NextResponse.json(balances)
   }
 
   if (user.role === "employee") {
-    const balances = getLeaveBalances(user.id)
+    const balances = await getLeaveBalances(user.id)
     return NextResponse.json(balances)
   }
 
   if (user.role === "manager") {
     const team = directReports(user.id)
     const allowedIds = new Set([user.id, ...team.map((t) => t.id)])
-    const allBalances = getLeaveBalances()
+    const allBalances = await getLeaveBalances()
     return NextResponse.json(allBalances.filter((b) => allowedIds.has(b.employeeId)))
   }
 
   // HR / Payroll
-  const balances = getLeaveBalances()
+  const balances = await getLeaveBalances()
   return NextResponse.json(balances)
 }

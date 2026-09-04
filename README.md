@@ -46,7 +46,36 @@ The application enforces a **defense-in-depth** security architecture across all
    - `/api/corrections` & `/api/leaves`: Employees submit for themselves; Managers can only review their direct reports; HR has org-wide review privileges.
    - `/api/bootstrap` & `/api/employees`: Scopes records to caller; redacts base salary unless caller has `hr` or `payroll` role.
    - `/api/payroll`: Strictly gated to `payroll` and `hr` roles.
-4. **Data Persistence**: In-memory database with automatic initial seed data and full backup/restore JSON capability.
+4. **Data Persistence (Supabase + PostgreSQL)**: Connected to Supabase cloud PostgreSQL with automatic relational schema (`supabase/schema.sql`) and graceful fallback to the in-memory store when offline.
+
+---
+
+## Supabase (PostgreSQL) Database Setup
+
+The platform uses **Supabase** for persistent cloud data storage across 6 relational tables (`employees`, `attendance_records`, `correction_requests`, `leave_requests`, `leave_balances`, `payroll_locks`).
+
+### 1. Run the Database Migration
+1. Log in to [Supabase](https://supabase.com) and open your project dashboard.
+2. Go to the **SQL Editor** tab.
+3. Open [`supabase/schema.sql`](file:///c:/Users/mulla_z6ocvb5/OneDrive%20-%20Sadhu%20Vaswani%20Institute%20of%20Management%20Studies/Desktop/Vernalis-Project-main/supabase/schema.sql) from this project, paste the entire script into the editor, and click **Run**.
+4. This creates all tables, primary/foreign keys, indexes, and populates initial demo data for all 8 employees.
+
+### 2. Configure Environment Variables
+Add your Supabase URL and API keys to `.env.local` (and your Vercel Project Settings):
+
+```env
+# NextAuth Configuration
+NEXTAUTH_SECRET=chrono-dev-super-secret-key-at-least-32-chars-long-2026
+NEXTAUTH_URL=http://localhost:3000
+
+# Supabase PostgreSQL Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://<your-project-id>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
+# Optional: Service Role Key for server-side elevated privileges
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...
+```
+
+> **Note**: If Supabase environment variables are omitted, the application automatically falls back to the in-memory repository with zero disruption, guaranteeing local tests and preview builds succeed.
 
 ---
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getDatabase } from "@/lib/server/attendance-db"
+import { getEmployees } from "@/lib/server/attendance-db"
 import { requireAuth } from "@/lib/server/auth"
 
 export async function GET(req: NextRequest) {
@@ -7,11 +7,11 @@ export async function GET(req: NextRequest) {
   if (auth.errorResponse) return auth.errorResponse
 
   const user = auth.user
-  const db = getDatabase()
+  const employees = await getEmployees()
 
   const canSeeSalaries = user.role === "hr" || user.role === "payroll"
 
-  const sanitized = db.employees.map((emp) => {
+  const sanitized = employees.map((emp) => {
     if (canSeeSalaries || emp.id === user.id) {
       return emp
     }

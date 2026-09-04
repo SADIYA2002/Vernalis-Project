@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const start = searchParams.get("start") || undefined
   const end = searchParams.get("end") || undefined
 
-  const summary = getPayrollSummary(start, end)
+  const summary = await getPayrollSummary(start, end)
   return NextResponse.json(summary)
 }
 
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const summary = setPayrollLock(locked, user.id)
+    const summary = await setPayrollLock(locked, user.id)
     return NextResponse.json(summary)
   } catch (err) {
     return NextResponse.json(

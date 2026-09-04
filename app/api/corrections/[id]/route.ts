@@ -24,7 +24,7 @@ export async function PATCH(
     }
 
     // Verify the target correction exists
-    const allCorrections = getCorrections()
+    const allCorrections = await getCorrections()
     const target = allCorrections.find((c) => c.id === id)
     if (!target) {
       return NextResponse.json({ error: "Correction request not found" }, { status: 404 })
@@ -39,7 +39,7 @@ export async function PATCH(
     }
 
     // Set reviewerId strictly to the authenticated user's ID
-    const result = reviewCorrection(id, approve, user.id, comment || "")
+    const result = await reviewCorrection(id, approve, user.id, comment || "")
     return NextResponse.json(result)
   } catch (err) {
     return NextResponse.json(

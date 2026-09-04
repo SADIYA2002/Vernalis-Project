@@ -24,7 +24,7 @@ export async function PATCH(
     }
 
     // Verify target leave request exists
-    const allLeaves = getLeaveRequests()
+    const allLeaves = await getLeaveRequests()
     const target = allLeaves.find((l) => l.id === id)
     if (!target) {
       return NextResponse.json({ error: "Leave request not found" }, { status: 404 })
@@ -39,7 +39,7 @@ export async function PATCH(
     }
 
     // Set reviewerId strictly to authenticated user's ID
-    const result = reviewLeaveRequest(id, approve, user.id, comment || "")
+    const result = await reviewLeaveRequest(id, approve, user.id, comment || "")
     return NextResponse.json(result)
   } catch (err) {
     return NextResponse.json(

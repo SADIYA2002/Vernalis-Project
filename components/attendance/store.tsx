@@ -47,6 +47,7 @@ export interface StoreValue {
   dismissToast: (id: number) => void
   pushToast: (title: string, description?: string, tone?: Toast["tone"]) => void
 
+  backend: "supabase" | "memory"
   isLoaded: boolean
   resetData: () => Promise<void>
   exportData: () => void
@@ -118,6 +119,7 @@ export function StoreProvider({
   const [leaves, setLeaves] = useState<LeaveRequest[]>(seed.leaves)
   const [balances, setBalances] = useState<LeaveBalance[]>(seed.balances)
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [backend, setBackend] = useState<"supabase" | "memory">("memory")
   const [isLoaded, setIsLoaded] = useState(false)
 
   // Sync session user ID and role when NextAuth session resolves
@@ -149,6 +151,9 @@ export function StoreProvider({
           setCorrections(bootstrap.corrections)
           setLeaves(bootstrap.leaves)
           setBalances(bootstrap.balances)
+          if (bootstrap.backend) {
+            setBackend(bootstrap.backend)
+          }
           setIsLoaded(true)
         }
       } catch (err) {
@@ -292,6 +297,7 @@ export function StoreProvider({
     toasts,
     dismissToast,
     pushToast,
+    backend,
     isLoaded,
     resetData,
     exportData,

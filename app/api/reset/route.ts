@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req, ["hr"])
   if (auth.errorResponse) return auth.errorResponse
 
-  const db = resetDatabase()
+  const db = await resetDatabase()
   return NextResponse.json({
     success: true,
     message: "Server database reset to initial demo state.",

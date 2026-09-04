@@ -19,24 +19,24 @@ export async function GET(req: NextRequest) {
         { status: 403 },
       )
     }
-    const leaves = getLeaveRequests({ employeeId: requestedEmployeeId, state })
+    const leaves = await getLeaveRequests({ employeeId: requestedEmployeeId, state })
     return NextResponse.json(leaves)
   }
 
   if (user.role === "employee") {
-    const leaves = getLeaveRequests({ employeeId: user.id, state })
+    const leaves = await getLeaveRequests({ employeeId: user.id, state })
     return NextResponse.json(leaves)
   }
 
   if (user.role === "manager") {
     const team = directReports(user.id)
     const allowedIds = new Set([user.id, ...team.map((t) => t.id)])
-    const allLeaves = getLeaveRequests({ state })
+    const allLeaves = await getLeaveRequests({ state })
     return NextResponse.json(allLeaves.filter((l) => allowedIds.has(l.employeeId)))
   }
 
   // HR / Payroll
-  const leaves = getLeaveRequests({ state })
+  const leaves = await getLeaveRequests({ state })
   return NextResponse.json(leaves)
 }
 
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const leave = createLeaveRequest({
+    const leave = await createLeaveRequest({
       employeeId: user.role === "employee" ? user.id : employeeId,
       type: type as LeaveType,
       from,
