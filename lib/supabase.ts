@@ -35,7 +35,7 @@ export interface DbAttendanceRecord {
   check_out: string | null
   worked_hours: number
   late_minutes: number
-  note?: string | null
+  source?: string
   corrected: boolean
 }
 
@@ -135,7 +135,6 @@ export function mapDbAttendance(row: DbAttendanceRecord): AttendanceRecord {
     checkOut: row.check_out,
     workedHours: Number(row.worked_hours) || 0,
     lateMinutes: Number(row.late_minutes) || 0,
-    note: row.note ?? undefined,
     corrected: row.corrected,
   }
 }
@@ -150,7 +149,7 @@ export function mapAttendanceToDb(r: AttendanceRecord): DbAttendanceRecord {
     check_out: r.checkOut,
     worked_hours: r.workedHours,
     late_minutes: r.lateMinutes,
-    note: r.note ?? null,
+    source: "web",
     corrected: Boolean(r.corrected),
   }
 }
