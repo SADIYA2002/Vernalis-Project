@@ -209,7 +209,7 @@ function Timesheet({ records }: { records: ReturnType<typeof useStore>["records"
       <Card>
         <CardHeader title="Daily records" description="August 2026" />
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[550px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Date</th>

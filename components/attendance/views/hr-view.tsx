@@ -293,7 +293,7 @@ function LeaveAdmin() {
       <Card>
         <CardHeader title="Leave requests" description={`${leaves.length} total · ${leaves.filter((l) => l.state === "pending").length} pending`} />
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[550px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Employee</th>
@@ -321,7 +321,7 @@ function LeaveAdmin() {
       <Card>
         <CardHeader title="Leave balances" description="Remaining paid-leave entitlement" />
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[550px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-5 py-3 font-medium">Employee</th>

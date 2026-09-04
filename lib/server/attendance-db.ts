@@ -11,7 +11,12 @@ import {
   type LeaveBalance,
   type LeaveRequest,
   type LeaveType,
+  type PayrollRow,
   ALL_PEOPLE,
+  MARKING_STAFF,
+  PERIOD_START,
+  PERIOD_END,
+  computePayrollRow,
   datesBetween,
   generateAttendance,
   generateLeaveBalances,
@@ -27,6 +32,9 @@ export interface ServerDatabase {
   corrections: CorrectionRequest[]
   leaves: LeaveRequest[]
   balances: LeaveBalance[]
+  payrollLocked: boolean
+  payrollLockedAt: string | null
+  payrollLockedBy: string | null
   lastUpdated: string
 }
 
@@ -43,6 +51,9 @@ function initDatabase(): ServerDatabase {
     corrections: seedCorrections(),
     leaves: seedLeaves(),
     balances: generateLeaveBalances(),
+    payrollLocked: false,
+    payrollLockedAt: null,
+    payrollLockedBy: null,
     lastUpdated: new Date().toISOString(),
   }
 }
@@ -296,3 +307,61 @@ export function getLeaveBalances(employeeId?: string): LeaveBalance[] {
   }
   return db.balances
 }
+
+// --- Server-Side Payroll Operations ---
+
+export interface ServerPayrollSummary {
+  periodStart: string
+  periodEnd: string
+  locked: boolean
+  lockedAt: string | null
+  lockedBy: string | null
+  rows: PayrollRow[]
+  totals: {
+    gross: number
+    lop: number
+    lateDeduction: number
+    payable: number
+  }
+}
+
+export function getPayrollSummary(
+  start = PERIOD_START,
+  end = PERIOD_END,
+): ServerPayrollSummary {
+  const db = getDatabase()
+  const rows: PayrollRow[] = MARKING_STAFF.map((emp) =>
+    computePayrollRow(db.records, db.leaves, emp, start, end),
+  )
+
+  const totals = rows.reduce(
+    (acc, r) => {
+      acc.gross += r.netAttendancePay
+      acc.lop += r.lopDays
+      acc.lateDeduction += r.lateDeductionAmt
+      acc.payable += r.payableDays
+      return acc
+    },
+    { gross: 0, lop: 0, lateDeduction: 0, payable: 0 },
+  )
+
+  return {
+    periodStart: start,
+    periodEnd: end,
+    locked: !!db.payrollLocked,
+    lockedAt: db.payrollLockedAt ?? null,
+    lockedBy: db.payrollLockedBy ?? null,
+    rows,
+    totals,
+  }
+}
+
+export function setPayrollLock(locked: boolean, lockedBy: string): ServerPayrollSummary {
+  const db = getDatabase()
+  db.payrollLocked = locked
+  db.payrollLockedAt = locked ? new Date().toISOString() : null
+  db.payrollLockedBy = locked ? lockedBy : null
+  db.lastUpdated = new Date().toISOString()
+  return getPayrollSummary()
+}
+

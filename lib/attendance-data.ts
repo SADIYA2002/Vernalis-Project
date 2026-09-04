@@ -171,33 +171,39 @@ export const HOLIDAYS: Record<string, string> = {
 
 export function datesBetween(start: string, end: string): string[] {
   const out: string[] = []
-  const d = new Date(start + "T00:00:00")
-  const last = new Date(end + "T00:00:00")
+  const d = new Date(start + "T00:00:00Z")
+  const last = new Date(end + "T00:00:00Z")
   while (d <= last) {
     out.push(d.toISOString().slice(0, 10))
-    d.setDate(d.getDate() + 1)
+    d.setUTCDate(d.getUTCDate() + 1)
   }
   return out
 }
 
 export function isWorkingDay(date: string): boolean {
-  const day = new Date(date + "T00:00:00").getDay()
+  const day = new Date(date + "T00:00:00Z").getUTCDay()
   return (POLICY.workWeek as readonly number[]).includes(day) && !HOLIDAYS[date]
 }
 
 export function baseStatusFor(date: string): AttendanceStatus | null {
-  const day = new Date(date + "T00:00:00").getDay()
+  const day = new Date(date + "T00:00:00Z").getUTCDay()
   if (HOLIDAYS[date]) return "holiday"
   if (!(POLICY.workWeek as readonly number[]).includes(day)) return "weekend"
   return null
 }
 
 export function formatDate(date: string, opts?: Intl.DateTimeFormatOptions): string {
-  return new Date(date + "T00:00:00").toLocaleDateString("en-IN", opts ?? { day: "2-digit", month: "short", year: "numeric" })
+  return new Date(date + "T00:00:00Z").toLocaleDateString("en-IN", {
+    timeZone: "UTC",
+    ...(opts ?? { day: "2-digit", month: "short", year: "numeric" }),
+  })
 }
 
 export function weekdayShort(date: string): string {
-  return new Date(date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" })
+  return new Date(date + "T00:00:00Z").toLocaleDateString("en-IN", {
+    timeZone: "UTC",
+    weekday: "short",
+  })
 }
 
 // --- SEEDED GENERATOR ------------------------------------------------------

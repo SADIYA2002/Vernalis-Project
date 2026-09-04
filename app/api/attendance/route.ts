@@ -1,18 +1,53 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAttendanceRecords, upsertAttendance } from "@/lib/server/attendance-db"
-import type { AttendanceStatus } from "@/lib/attendance-data"
+import { requireAuth, canAccessEmployeeData } from "@/lib/server/auth"
+import { directReports, type AttendanceStatus } from "@/lib/attendance-data"
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAuth(req)
+  if (auth.errorResponse) return auth.errorResponse
+
+  const user = auth.user
   const { searchParams } = new URL(req.url)
-  const employeeId = searchParams.get("employeeId") || undefined
+  const requestedEmployeeId = searchParams.get("employeeId") || undefined
   const start = searchParams.get("start") || undefined
   const end = searchParams.get("end") || undefined
 
-  const records = getAttendanceRecords({ employeeId, start, end })
+  if (requestedEmployeeId) {
+    if (!canAccessEmployeeData(user, requestedEmployeeId)) {
+      return NextResponse.json(
+        { error: "Forbidden: You cannot view attendance records for this employee." },
+        { status: 403 },
+      )
+    }
+    const records = getAttendanceRecords({ employeeId: requestedEmployeeId, start, end })
+    return NextResponse.json(records)
+  }
+
+  // If no specific employee requested, scope by role
+  if (user.role === "employee") {
+    const records = getAttendanceRecords({ employeeId: user.id, start, end })
+    return NextResponse.json(records)
+  }
+
+  if (user.role === "manager") {
+    const team = directReports(user.id)
+    const allowedIds = new Set([user.id, ...team.map((t) => t.id)])
+    const allRecords = getAttendanceRecords({ start, end })
+    return NextResponse.json(allRecords.filter((r) => allowedIds.has(r.employeeId)))
+  }
+
+  // HR and Payroll can view all
+  const records = getAttendanceRecords({ start, end })
   return NextResponse.json(records)
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAuth(req)
+  if (auth.errorResponse) return auth.errorResponse
+
+  const user = auth.user
+
   try {
     const body = await req.json()
     const { employeeId, date, status, checkIn, checkOut, note } = body
@@ -24,8 +59,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Security check: Employee can only mark attendance for themselves
+    if (user.role === "employee" && employeeId !== user.id) {
+      return NextResponse.json(
+        { error: "Forbidden: You can only mark attendance for your own account." },
+        { status: 403 },
+      )
+    }
+
     const record = upsertAttendance({
-      employeeId,
+      employeeId: user.role === "employee" ? user.id : employeeId,
       date,
       status: status as AttendanceStatus,
       checkIn,

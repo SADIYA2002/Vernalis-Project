@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --test --experimental-strip-types test/**/*.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -14,6 +15,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
     "next": "16.3.3",
+    "next-auth": "^4.24.15",
     "react": "^19",
     "react-dom": "^19",
     "recharts": "^3.10.1",

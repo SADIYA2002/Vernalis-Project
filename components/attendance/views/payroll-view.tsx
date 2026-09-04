@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Download, Lock, LockOpen, ChevronRight, AlertTriangle } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Download, Lock, LockOpen, ChevronRight, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
 import {
   MARKING_STAFF,
   PERIOD_END,
@@ -14,20 +14,40 @@ import {
   type PayrollRow,
 } from "@/lib/attendance-data"
 import { useStore } from "@/components/attendance/store"
+import { apiClient, type ServerPayrollSummary } from "@/lib/api-client"
 import { Avatar, Card, CardHeader, PageHeading, StatTile } from "@/components/attendance/ui"
 
 export function PayrollView({ section }: { section: string }) {
-  const { records, leaves, corrections } = useStore()
-  const [locked, setLocked] = useState(false)
+  const { records, leaves, corrections, pushToast } = useStore()
+  const [serverPayroll, setServerPayroll] = useState<ServerPayrollSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [lockLoading, setLockLoading] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
 
-  const rows = useMemo<PayrollRow[]>(
+  // Fetch server-side computed payroll numbers from backend API
+  const loadServerPayroll = useCallback(async () => {
+    try {
+      const data = await apiClient.getPayroll({ start: PERIOD_START, end: PERIOD_END })
+      setServerPayroll(data)
+    } catch (err) {
+      console.warn("[PayrollView] Failed to fetch server-computed payroll:", err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadServerPayroll()
+  }, [loadServerPayroll, records, leaves])
+
+  // Fallback if initial load is pending
+  const fallbackRows = useMemo<PayrollRow[]>(
     () => MARKING_STAFF.map((e) => computePayrollRow(records, leaves, e)),
     [records, leaves],
   )
 
-  const totals = useMemo(() => {
-    return rows.reduce(
+  const fallbackTotals = useMemo(() => {
+    return fallbackRows.reduce(
       (acc, r) => {
         acc.gross += r.netAttendancePay
         acc.lop += r.lopDays
@@ -37,7 +57,31 @@ export function PayrollView({ section }: { section: string }) {
       },
       { gross: 0, lop: 0, lateDeduction: 0, payable: 0 },
     )
-  }, [rows])
+  }, [fallbackRows])
+
+  const rows = serverPayroll?.rows ?? fallbackRows
+  const totals = serverPayroll?.totals ?? fallbackTotals
+  const locked = serverPayroll?.locked ?? false
+
+  async function handleToggleLock() {
+    setLockLoading(true)
+    try {
+      const nextLocked = !locked
+      const res = await apiClient.setPayrollLock(nextLocked)
+      setServerPayroll(res)
+      pushToast(
+        nextLocked ? "Payroll Period Locked" : "Payroll Period Unlocked",
+        nextLocked
+          ? "Attendance for this cycle is frozen on the server for payroll handoff."
+          : "Payroll cycle unlocked for adjustments.",
+        nextLocked ? "success" : "info",
+      )
+    } catch (err) {
+      pushToast("Lock action failed", err instanceof Error ? err.message : "Could not update lock state", "warn")
+    } finally {
+      setLockLoading(false)
+    }
+  }
 
   const pendingCount =
     corrections.filter((c) => c.state === "pending").length + leaves.filter((l) => l.state === "pending").length
@@ -104,6 +148,9 @@ export function PayrollView({ section }: { section: string }) {
         description={`Attendance-derived pay components for ${formatDate(PERIOD_START, { day: "2-digit", month: "long" })} – ${formatDate(PERIOD_END, { day: "2-digit", month: "long", year: "numeric" })}. This is the hand-off from attendance to salary processing.`}
         action={
           <div className="flex items-center gap-2">
+            <span className="hidden items-center gap-1 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600 sm:inline-flex dark:text-emerald-400">
+              <CheckCircle2 className="size-3" /> Server Computed
+            </span>
             <button
               onClick={exportCsv}
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-accent"
@@ -111,14 +158,21 @@ export function PayrollView({ section }: { section: string }) {
               <Download className="size-4" /> Export CSV
             </button>
             <button
-              onClick={() => setLocked((v) => !v)}
+              onClick={handleToggleLock}
+              disabled={lockLoading}
               className={
                 locked
-                  ? "inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-accent"
-                  : "inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:opacity-90"
+                  ? "inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-accent disabled:opacity-50"
+                  : "inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-50"
               }
             >
-              {locked ? <LockOpen className="size-4" /> : <Lock className="size-4" />}
+              {lockLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : locked ? (
+                <LockOpen className="size-4" />
+              ) : (
+                <Lock className="size-4" />
+              )}
               {locked ? "Unlock Period" : "Lock for Payroll"}
             </button>
           </div>
@@ -169,7 +223,7 @@ function PayrollInputsTable({ rows, onSelect }: { rows: PayrollRow[]; onSelect: 
         description="Every figure is derived from attendance records. Click a row to see the computation."
       />
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[650px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th className="px-5 py-3 font-medium">Employee</th>
@@ -289,7 +343,7 @@ function RegisterSummary({ rows }: { rows: PayrollRow[] }) {
         description="The statutory muster: payable days, leave and deductions that justify each salary figure."
       />
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[650px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th className="px-5 py-3 font-medium">Employee</th>

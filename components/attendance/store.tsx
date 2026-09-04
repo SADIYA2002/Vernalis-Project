@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useSession } from "next-auth/react"
 import {
   type AttendanceRecord,
   type AttendanceStatus,
@@ -100,10 +101,17 @@ function lateMinutesFrom(checkIn?: string | null): number {
 
 let toastSeq = 1
 
-export function StoreProvider({ children }: { children: ReactNode }) {
+export function StoreProvider({
+  children,
+  initialRole,
+}: {
+  children: ReactNode
+  initialRole?: Role
+}) {
+  const { data: session, status } = useSession()
   const seed = getDefaultSeedData()
 
-  const [role, setRoleState] = useState<Role>(seed.session.role)
+  const [role, setRoleState] = useState<Role>(initialRole || seed.session.role)
   const [currentUserId, setCurrentUserIdState] = useState<string>(seed.session.currentUserId)
   const [records, setRecords] = useState<AttendanceRecord[]>(seed.records)
   const [corrections, setCorrections] = useState<CorrectionRequest[]>(seed.corrections)
@@ -112,23 +120,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
 
-  // Load from Backend API /api/bootstrap on client mount (with local storage fallback)
+  // Sync session user ID and role when NextAuth session resolves
+  useEffect(() => {
+    if (session?.user?.id) {
+      setCurrentUserIdState(session.user.id)
+      if (initialRole) {
+        setRoleState(initialRole)
+      } else if (session.user.role) {
+        setRoleState(session.user.role)
+      }
+    }
+  }, [session?.user?.id, session?.user?.role, initialRole])
+
+  // Load from Backend API /api/bootstrap on client mount (with authenticated data scoping)
   useEffect(() => {
     let active = true
     async function loadInitialData() {
-      // First load local storage cache so UI renders immediately
-      const cached = loadStorage()
-      if (active) {
-        setRoleState(cached.session.role)
-        setCurrentUserIdState(cached.session.currentUserId)
-        setRecords(cached.records)
-        setCorrections(cached.corrections)
-        setLeaves(cached.leaves)
-        setBalances(cached.balances)
+      if (status === "loading") return
+      if (status === "unauthenticated") {
         setIsLoaded(true)
+        return
       }
 
-      // Then fetch latest from API route
       try {
         const bootstrap = await apiClient.getBootstrap()
         if (active && bootstrap) {
@@ -136,18 +149,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setCorrections(bootstrap.corrections)
           setLeaves(bootstrap.leaves)
           setBalances(bootstrap.balances)
-          saveStorage({
-            version: 1,
-            updatedAt: bootstrap.lastUpdated,
-            records: bootstrap.records,
-            corrections: bootstrap.corrections,
-            leaves: bootstrap.leaves,
-            balances: bootstrap.balances,
-            session: { role: cached.session.role, currentUserId: cached.session.currentUserId },
-          })
+          setIsLoaded(true)
         }
       } catch (err) {
-        console.warn("[StoreProvider] Failed to fetch /api/bootstrap, using local cache:", err)
+        console.warn("[StoreProvider] Failed to fetch /api/bootstrap, using cached fallback:", err)
+        const cached = loadStorage()
+        if (active) {
+          setRecords(cached.records)
+          setCorrections(cached.corrections)
+          setLeaves(cached.leaves)
+          setBalances(cached.balances)
+          setIsLoaded(true)
+        }
       }
     }
 
@@ -155,7 +168,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [])
+  }, [session?.user?.id, status])
 
   // Cross-tab synchronization via browser storage events
   useEffect(() => {
@@ -211,8 +224,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   function setCurrentUserId(nextUserId: string) {
-    setCurrentUserIdState(nextUserId)
-    persistCurrent({ session: { role, currentUserId: nextUserId } })
+    if (!session?.user?.id) {
+      setCurrentUserIdState(nextUserId)
+      persistCurrent({ session: { role, currentUserId: nextUserId } })
+    }
   }
 
   async function resetData() {

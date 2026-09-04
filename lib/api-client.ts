@@ -10,7 +10,23 @@ import type {
   LeaveBalance,
   LeaveRequest,
   LeaveType,
+  PayrollRow,
 } from "./attendance-data"
+
+export interface ServerPayrollSummary {
+  periodStart: string
+  periodEnd: string
+  locked: boolean
+  lockedAt: string | null
+  lockedBy: string | null
+  rows: PayrollRow[]
+  totals: {
+    gross: number
+    lop: number
+    lateDeduction: number
+    payable: number
+  }
+}
 
 export interface BootstrapResponse {
   employees: Employee[]
@@ -157,6 +173,21 @@ export const apiClient = {
   async getBalances(employeeId?: string): Promise<LeaveBalance[]> {
     const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : ""
     return request<LeaveBalance[]>(`/api/balances${qs}`)
+  },
+
+  async getPayroll(params?: { start?: string; end?: string }): Promise<ServerPayrollSummary> {
+    const query = new URLSearchParams()
+    if (params?.start) query.set("start", params.start)
+    if (params?.end) query.set("end", params.end)
+    const qs = query.toString() ? `?${query.toString()}` : ""
+    return request<ServerPayrollSummary>(`/api/payroll${qs}`)
+  },
+
+  async setPayrollLock(locked: boolean): Promise<ServerPayrollSummary> {
+    return request<ServerPayrollSummary>("/api/payroll", {
+      method: "POST",
+      body: JSON.stringify({ locked }),
+    })
   },
 
   async resetServer(): Promise<{ success: boolean; message: string }> {
