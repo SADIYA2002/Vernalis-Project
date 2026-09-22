@@ -35,10 +35,10 @@ export default function UnauthorizedPage() {
 
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
         <Link
-          href="/portal/employee"
+          href="/"
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow transition hover:opacity-90"
         >
-          <ArrowLeft className="size-4" /> Go to My Employee Portal
+          <ArrowLeft className="size-4" /> Go to My Authorized Workspace
         </Link>
 
         <button

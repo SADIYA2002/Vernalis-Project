@@ -3,7 +3,7 @@ import { getRegistrationRequests } from "@/lib/server/attendance-db"
 import { requireAuth } from "@/lib/server/auth"
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req, ["hr", "manager"])
+  const auth = await requireAuth(req, ["hr", "manager", "payroll"])
   if (auth.errorResponse) {
     return auth.errorResponse
   }

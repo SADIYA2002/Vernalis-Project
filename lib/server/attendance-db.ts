@@ -730,6 +730,10 @@ export async function getBootstrapData(user: { id: string; role: string }) {
     scopedRegistrations = allRegistrations.filter((r) => !r.managerId || r.managerId === user.id)
   } else if (user.role === "hr") {
     scopedRegistrations = allRegistrations
+  } else if (user.role === "payroll") {
+    scopedRegistrations = allRegistrations.filter(
+      (r) => r.role === "payroll" || r.department === "Finance" || !r.managerId || r.managerId === user.id,
+    )
   }
 
   return {

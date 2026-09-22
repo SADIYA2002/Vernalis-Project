@@ -84,7 +84,7 @@ function LoginForm() {
         setLoading(false)
         setActiveAccount(null)
       } else {
-        router.push(callbackUrl)
+        router.push("/")
         router.refresh()
       }
     } catch {

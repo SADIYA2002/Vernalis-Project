@@ -16,6 +16,7 @@ import {
 import { useStore } from "@/components/attendance/store"
 import { apiClient, type ServerPayrollSummary } from "@/lib/api-client"
 import { Avatar, Card, CardHeader, PageHeading, StatTile } from "@/components/attendance/ui"
+import { RegistrationsView } from "./registrations-view"
 
 export function PayrollView({ section }: { section: string }) {
   const { records, leaves, corrections, pushToast } = useStore()
@@ -126,6 +127,10 @@ export function PayrollView({ section }: { section: string }) {
     a.download = `payroll-inputs-${PERIOD_START}_${PERIOD_END}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  if (section === "registrations") {
+    return <RegistrationsView />
   }
 
   if (section === "register") {

@@ -10,7 +10,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAuth(req, ["hr", "manager"])
+  const auth = await requireAuth(req, ["hr", "manager", "payroll"])
   if (auth.errorResponse) {
     return auth.errorResponse
   }
@@ -40,6 +40,14 @@ export async function POST(
     if (user.role === "manager" && target.managerId && target.managerId !== user.id) {
       return NextResponse.json(
         { error: "Forbidden. You can only review registration requests for your own team." },
+        { status: 403 },
+      )
+    }
+
+    // Payroll officer can only approve requests for Payroll role or Finance department
+    if (user.role === "payroll" && target.role !== "payroll" && target.department !== "Finance") {
+      return NextResponse.json(
+        { error: "Forbidden. You can only review registration requests for the Payroll / Finance department." },
         { status: 403 },
       )
     }

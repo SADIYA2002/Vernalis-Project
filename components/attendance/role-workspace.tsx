@@ -48,6 +48,7 @@ const NAV: Record<Role, NavItem[]> = {
   ],
   payroll: [
     { id: "inputs", label: "Payroll Inputs", icon: FileSpreadsheet },
+    { id: "registrations", label: "New Joinees", icon: UserCheck, badge: "registrations" },
     { id: "register", label: "Attendance Register", icon: CalendarDays },
   ],
 }
