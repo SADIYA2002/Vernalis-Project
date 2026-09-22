@@ -1,16 +1,39 @@
 "use client"
 
-import { useState } from "react"
-import { Check, X, Clock, UserCheck, ShieldCheck, Mail, Building2, Briefcase, Calendar } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Check, X, Clock, UserCheck, ShieldCheck, Mail, Building2, Briefcase, Calendar, RotateCw, Loader2 } from "lucide-react"
 import { useStore, type RegistrationRequest } from "../store"
 import { PageHeading, Card, CardHeader } from "../ui"
 
 export function RegistrationsView() {
   const { registrationRequests, approveRegistration, rejectRegistration } = useStore()
+  const [liveRequests, setLiveRequests] = useState<RegistrationRequest[] | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [filter, setFilter] = useState<"pending" | "all" | "approved" | "rejected">("pending")
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
 
-  const requests = registrationRequests || []
+  const fetchLive = async () => {
+    try {
+      setRefreshing(true)
+      const res = await fetch("/api/registrations")
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          setLiveRequests(data)
+        }
+      }
+    } catch (err) {
+      console.warn("[RegistrationsView] Failed to fetch live registrations:", err)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchLive()
+  }, [])
+
+  const requests = liveRequests ?? (registrationRequests || [])
   const filtered = requests.filter((r) => {
     if (filter === "all") return true
     return r.status === filter
@@ -22,6 +45,7 @@ export function RegistrationsView() {
     setActionLoadingId(id)
     try {
       await approveRegistration(id)
+      await fetchLive()
     } finally {
       setActionLoadingId(null)
     }
@@ -31,6 +55,7 @@ export function RegistrationsView() {
     setActionLoadingId(id)
     try {
       await rejectRegistration(id)
+      await fetchLive()
     } finally {
       setActionLoadingId(null)
     }
@@ -38,10 +63,20 @@ export function RegistrationsView() {
 
   return (
     <div className="space-y-6">
-      <PageHeading
-        title="Employee Registrations"
-        description="Review, verify, and approve new candidates requesting access to the Chrono portal."
-      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <PageHeading
+          title="Employee Registrations"
+          description="Review, verify, and approve new candidates requesting access to the Chrono portal."
+        />
+        <button
+          onClick={fetchLive}
+          disabled={refreshing}
+          className="inline-flex items-center gap-1.5 self-start sm:self-center rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-accent disabled:opacity-50"
+        >
+          <RotateCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
+        </button>
+      </div>
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">

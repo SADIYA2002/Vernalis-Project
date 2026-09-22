@@ -728,12 +728,8 @@ export async function getBootstrapData(user: { id: string; role: string }) {
     scopedLeaves = allLeaves.filter((l) => allowedIds.has(l.employeeId))
     scopedBalances = allBalances.filter((b) => allowedIds.has(b.employeeId))
     scopedRegistrations = allRegistrations.filter((r) => !r.managerId || r.managerId === user.id)
-  } else if (user.role === "hr") {
+  } else if (user.role === "hr" || user.role === "payroll") {
     scopedRegistrations = allRegistrations
-  } else if (user.role === "payroll") {
-    scopedRegistrations = allRegistrations.filter(
-      (r) => r.role === "payroll" || r.department === "Finance" || !r.managerId || r.managerId === user.id,
-    )
   }
 
   return {
@@ -889,32 +885,53 @@ export async function getRegistrationRequests(filters?: {
       // Table may not exist yet, proceed to check employees table
     }
 
-    // 2. Also check Supabase employees table for candidates with [PENDING] or [REJECTED]
+    // 2. Also check Supabase employees table (captures pending, rejected, and approved joinees)
     try {
       const { data: empData, error: empErr } = await client
         .from("employees")
         .select("*")
-        .or("id.like.reg-%,designation.ilike.[PENDING]%,designation.ilike.[REJECTED]%")
         .order("created_at", { ascending: false })
 
       if (!empErr && empData && empData.length > 0) {
-        const fromEmps: RegistrationRequest[] = empData.map((d: any) => {
-          const isPending = d.designation?.includes("[PENDING]") || d.id?.startsWith("reg-")
+        const SEED_IDS = new Set([
+          "emp-01", "emp-02", "emp-03", "emp-04", "emp-05", "emp-06",
+          "mgr-01", "mgr-02", "hr-01", "pay-01"
+        ])
+
+        const fromEmps: RegistrationRequest[] = []
+        for (const d of (empData as any[])) {
+          const isPending = d.id?.startsWith("reg-") || d.designation?.includes("[PENDING]")
           const isRejected = d.designation?.includes("[REJECTED]")
-          const cleanDesignation = (d.designation || "").replace(/\[PENDING\]\s*/i, "").replace(/\[REJECTED\]\s*/i, "")
-          return {
-            id: d.id,
-            name: d.name,
-            email: d.email,
-            role: d.base_role as Role,
-            department: d.department,
-            designation: cleanDesignation,
-            managerId: d.manager_id,
-            monthlySalary: Number(d.monthly_salary) || 110000,
-            status: isRejected ? "rejected" : "pending",
-            submittedAt: d.created_at,
+          const isApprovedRegistration = !SEED_IDS.has(d.id) && !isPending && !isRejected
+
+          if (isPending || isRejected || isApprovedRegistration) {
+            const cleanDesignation = (d.designation || "")
+              .replace(/\[PENDING\]\s*/i, "")
+              .replace(/\[REJECTED\]\s*/i, "")
+              .trim()
+
+            const status: "pending" | "approved" | "rejected" = isPending
+              ? "pending"
+              : isRejected
+                ? "rejected"
+                : "approved"
+
+            fromEmps.push({
+              id: d.id,
+              name: d.name,
+              email: d.email,
+              role: (d.base_role as Role) || "employee",
+              department: d.department,
+              designation: cleanDesignation,
+              managerId: d.manager_id,
+              monthlySalary: Number(d.monthly_salary) || 110000,
+              status,
+              submittedAt: d.created_at,
+              reviewedAt: isApprovedRegistration ? d.created_at : undefined,
+              reviewedBy: isApprovedRegistration ? (d.manager_id || "hr-01") : undefined,
+            })
           }
-        })
+        }
 
         let result = fromEmps
         if (filters?.status) {
@@ -1009,7 +1026,7 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
     // (b) ALWAYS ALSO persist into Supabase employees table with [PENDING] designation
     // This guarantees immediate visibility and persistence in Supabase
     try {
-      await client.from("employees").upsert({
+      const { error: empErr } = await client.from("employees").upsert({
         id: newRequest.id,
         name: newRequest.name,
         email: newRequest.email,
@@ -1020,6 +1037,9 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
         monthly_salary: newRequest.monthlySalary,
         created_at: newRequest.submittedAt,
       }, { onConflict: "email" })
+      if (empErr) {
+        console.error("[Supabase] Failed to write pending candidate to employees table:", empErr.message)
+      }
     } catch (err) {
       console.error("[Supabase] Failed to write pending candidate to employees table:", err)
     }
