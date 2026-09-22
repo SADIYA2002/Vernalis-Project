@@ -6,6 +6,8 @@ import {
   POLICY,
   STATUS_META,
   TODAY,
+  getSystemMonth,
+  getSystemToday,
   computeMonthStats,
   formatDate,
   type AttendanceStatus,
@@ -31,7 +33,8 @@ export function EmployeeView({ section }: { section: string }) {
 
 function Dashboard({ stats, name }: { stats: ReturnType<typeof computeMonthStats>; name: string }) {
   const { records, currentUserId, corrections, leaves } = useStore()
-  const today = records.find((r) => r.employeeId === currentUserId && r.date === TODAY)
+  const systemToday = getSystemToday()
+  const today = records.find((r) => r.employeeId === currentUserId && (r.date === systemToday || r.date === TODAY))
   const myPendingCor = corrections.filter((c) => c.employeeId === currentUserId && c.state === "pending")
   const myPendingLv = leaves.filter((l) => l.employeeId === currentUserId && l.state === "pending")
 
@@ -39,14 +42,14 @@ function Dashboard({ stats, name }: { stats: ReturnType<typeof computeMonthStats
     <div className="flex flex-col gap-6">
       <PageHeading
         title={`Good day, ${name.split(" ")[0]}`}
-        description="Your attendance summary for August 2026. All figures feed directly into payroll."
+        description="Your attendance summary for the current period. All figures feed directly into payroll."
       />
 
       <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <CalendarClock className="size-5 text-primary" />
           <div>
-            <p className="text-sm font-medium text-foreground">Today · {formatDate(TODAY)}</p>
+            <p className="text-sm font-medium text-foreground">Today · {formatDate(systemToday)}</p>
             <p className="text-xs text-muted-foreground">
               {today && today.checkIn ? `Checked in ${today.checkIn}${today.checkOut ? ` · out ${today.checkOut}` : ""}` : "Not marked yet"}
             </p>
@@ -116,11 +119,13 @@ const MARK_OPTIONS: AttendanceStatus[] = ["present", "wfh", "half-day", "leave"]
 
 function MarkAttendance() {
   const { currentUserId, records, markAttendance } = useStore()
-  const [calendarMonth, setCalendarMonth] = useState("2026-08")
-  const [selectedDate, setSelectedDate] = useState<string>(TODAY)
+  const systemMonth = getSystemMonth()
+  const systemToday = getSystemToday()
+  const [calendarMonth, setCalendarMonth] = useState(() => systemMonth)
+  const [selectedDate, setSelectedDate] = useState<string>(() => systemToday)
 
   const activeRecord = records.find((r) => r.employeeId === currentUserId && r.date === selectedDate)
-  const isToday = selectedDate === TODAY
+  const isToday = selectedDate === systemToday
 
   const [status, setStatus] = useState<AttendanceStatus>(
     activeRecord?.status && MARK_OPTIONS.includes(activeRecord.status) ? activeRecord.status : "present",
@@ -170,8 +175,8 @@ function MarkAttendance() {
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedDate(TODAY)
-                    setCalendarMonth(TODAY.slice(0, 7))
+                    setSelectedDate(systemToday)
+                    setCalendarMonth(systemMonth)
                   }}
                   className="rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-primary transition hover:bg-accent"
                 >
@@ -253,14 +258,15 @@ function MarkAttendance() {
 }
 
 function Timesheet({ records }: { records: ReturnType<typeof useStore>["records"] }) {
-  const [selectedMonth, setSelectedMonth] = useState("2026-08")
+  const systemMonth = getSystemMonth()
+  const [selectedMonth, setSelectedMonth] = useState(() => systemMonth)
   const availableMonths = useMemo(() => {
     const set = new Set<string>()
     records.forEach((r) => set.add(r.date.slice(0, 7)))
     set.add("2026-08")
-    set.add(TODAY.slice(0, 7))
+    set.add(systemMonth)
     return Array.from(set).sort().reverse()
-  }, [records])
+  }, [records, systemMonth])
 
   const rows = [...records]
     .filter((r) => r.date.startsWith(selectedMonth))
@@ -326,10 +332,12 @@ const CORRECTION_TARGETS: AttendanceStatus[] = ["present", "wfh", "half-day", "l
 
 function Corrections() {
   const { currentUserId, records, corrections, submitCorrection } = useStore()
-  const myRecords = records.filter((r) => r.employeeId === currentUserId && r.date <= TODAY && r.status !== "weekend" && r.status !== "holiday")
+  const systemToday = getSystemToday()
+  const maxDate = systemToday > TODAY ? systemToday : TODAY
+  const myRecords = records.filter((r) => r.employeeId === currentUserId && r.date <= maxDate && r.status !== "weekend" && r.status !== "holiday")
   const myCorrections = corrections.filter((c) => c.employeeId === currentUserId)
 
-  const [date, setDate] = useState(myRecords.length ? myRecords[myRecords.length - 1].date : TODAY)
+  const [date, setDate] = useState(myRecords.length ? myRecords[myRecords.length - 1].date : systemToday)
   const current = myRecords.find((r) => r.date === date)
   const [toStatus, setToStatus] = useState<AttendanceStatus>("present")
   const [checkIn, setCheckIn] = useState("09:00")

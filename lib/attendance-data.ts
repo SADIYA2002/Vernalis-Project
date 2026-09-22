@@ -113,6 +113,21 @@ export const PERIOD_START = "2026-08-01"
 export const PERIOD_END = "2026-08-31"
 export const HISTORY_START = "2026-07-01" // extra history for trend analytics
 
+export function getSystemToday(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const day = String(now.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+export function getSystemMonth(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  return `${year}-${month}`
+}
+
 // --- ORG -------------------------------------------------------------------
 
 export const EMPLOYEES: Employee[] = [

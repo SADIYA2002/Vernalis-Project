@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils"
 import {
   HOLIDAYS,
   STATUS_META,
-  TODAY,
+  getSystemMonth,
+  getSystemToday,
   formatDate,
   type AttendanceRecord,
   type AttendanceStatus,
@@ -34,18 +35,17 @@ export function MonthCalendar({
   showSelectedDayCard = true,
   className,
 }: MonthCalendarProps) {
-  // Internal month state if not controlled from parent
+  const systemMonth = getSystemMonth()
+  const systemToday = getSystemToday()
+
+  // Internal month state if not controlled from parent (defaults to system date month)
   const [internalMonth, setInternalMonth] = useState<string>(() => {
     if (controlledMonth) return controlledMonth
-    if (records.length > 0) {
-      const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1))
-      return sorted[0].date.slice(0, 7)
-    }
-    return TODAY.slice(0, 7)
+    return systemMonth
   })
 
-  // Internal selected date state if not controlled
-  const [internalSelectedDate, setInternalSelectedDate] = useState<string | null>(null)
+  // Internal selected date state if not controlled (defaults to system today)
+  const [internalSelectedDate, setInternalSelectedDate] = useState<string | null>(() => systemToday)
 
   const activeMonth = controlledMonth ?? internalMonth
   const activeSelectedDate = controlledSelectedDate !== undefined ? controlledSelectedDate : internalSelectedDate
@@ -79,9 +79,8 @@ export function MonthCalendar({
   }
 
   const handleToday = () => {
-    const todayMonth = TODAY.slice(0, 7)
-    handleMonthChange(todayMonth)
-    handleSelectDay(TODAY)
+    handleMonthChange(systemMonth)
+    handleSelectDay(systemToday)
   }
 
   const byDate = useMemo(() => new Map(records.map((r) => [r.date, r])), [records])
@@ -112,7 +111,7 @@ export function MonthCalendar({
             <span className="text-sm font-semibold text-foreground sm:text-base">
               {monthTitle}
             </span>
-            {activeMonth === TODAY.slice(0, 7) && (
+            {activeMonth === systemMonth && (
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
                 Current
               </span>
@@ -166,8 +165,8 @@ export function MonthCalendar({
           const dayOfWeek = new Date(date + "T00:00:00Z").getUTCDay()
           const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
           const holidayName = HOLIDAYS[date]
-          const isFuture = date > TODAY
-          const isToday = date === TODAY
+          const isFuture = date > systemToday
+          const isToday = date === systemToday
 
           let status: AttendanceStatus
           if (rec) {
@@ -233,7 +232,7 @@ export function MonthCalendar({
               <span className="text-xs font-semibold text-foreground sm:text-sm">
                 {formatDate(activeSelectedDate, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
               </span>
-              {activeSelectedDate === TODAY && (
+              {activeSelectedDate === systemToday && (
                 <span className="rounded bg-primary/10 px-1.5 py-0.2 text-[10px] font-bold text-primary">
                   Today
                 </span>
@@ -251,7 +250,7 @@ export function MonthCalendar({
                   ? "holiday"
                   : [0, 6].includes(new Date(activeSelectedDate + "T00:00:00Z").getUTCDay())
                     ? "weekend"
-                    : activeSelectedDate > TODAY
+                    : activeSelectedDate > systemToday
                       ? "present"
                       : "absent")
               }

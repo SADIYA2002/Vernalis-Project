@@ -6,6 +6,7 @@ import {
   POLICY,
   STATUS_META,
   TODAY,
+  getSystemToday,
   computeMonthStats,
   directReports,
   formatDate,
@@ -202,9 +203,10 @@ function Approvals({ reports }: { reports: ReturnType<typeof directReports> }) {
 
 function TeamTimesheet({ reports }: { reports: ReturnType<typeof directReports> }) {
   const { records } = useStore()
+  const systemToday = getSystemToday()
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Team timesheet" description={`Today's status and month summary — ${formatDate(TODAY)}.`} />
+      <PageHeading title="Team timesheet" description={`Today's status and month summary — ${formatDate(systemToday)}.`} />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -222,7 +224,7 @@ function TeamTimesheet({ reports }: { reports: ReturnType<typeof directReports> 
             <tbody className="divide-y divide-border">
               {reports.map((emp) => {
                 const stats = computeMonthStats(records, emp.id)
-                const today = records.find((r) => r.employeeId === emp.id && r.date === TODAY)
+                const today = records.find((r) => r.employeeId === emp.id && (r.date === systemToday || r.date === TODAY))
                 return (
                   <tr key={emp.id} className="hover:bg-muted/40">
                     <td className="px-5 py-3">

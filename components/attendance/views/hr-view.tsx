@@ -22,6 +22,7 @@ import {
   POLICY,
   STATUS_META,
   TODAY,
+  getSystemMonth,
   computeMonthStats,
   formatDate,
   isWorkingDay,
@@ -227,7 +228,7 @@ function Register() {
     return filtered.length > 0 ? filtered : MARKING_STAFF
   }, [employees])
   const [empId, setEmpId] = useState(staff[0]?.id ?? MARKING_STAFF[0].id)
-  const [month, setMonth] = useState("2026-08")
+  const [month, setMonth] = useState(() => getSystemMonth())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
   const empRecords = records.filter((r) => r.employeeId === empId)
