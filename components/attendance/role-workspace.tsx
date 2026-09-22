@@ -15,7 +15,7 @@ import {
   UserCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getPerson, type Role } from "@/lib/attendance-data"
+import type { Role } from "@/lib/attendance-data"
 import { usePendingCounts, useStore } from "./store"
 import { Avatar } from "./ui"
 import { EmployeeView } from "./views/employee-view"

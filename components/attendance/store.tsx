@@ -13,6 +13,7 @@ import {
   type Role,
   ALL_PEOPLE,
   getPerson,
+  registerDynamicEmployees,
   datesBetween,
   isWorkingDay,
   POLICY,
@@ -183,6 +184,7 @@ export function StoreProvider({
         if (active && bootstrap) {
           if (bootstrap.employees && bootstrap.employees.length > 0) {
             setEmployees(bootstrap.employees)
+            registerDynamicEmployees(bootstrap.employees)
           }
           setRecords(bootstrap.records)
           setCorrections(bootstrap.corrections)
@@ -601,6 +603,23 @@ export function StoreProvider({
         setRegistrationRequests((prev) =>
           prev.map((r) => (r.id === id ? { ...r, status: "approved" as const } : r)),
         )
+        if (data.employee) {
+          setEmployees((prev) => {
+            if (prev.some((e) => e.id === data.employee.id)) return prev
+            return [...prev, data.employee]
+          })
+          registerDynamicEmployees([data.employee])
+        }
+        // Refresh bootstrap data in background to sync newly generated leave balance
+        apiClient.getBootstrap().then((fresh) => {
+          if (fresh) {
+            if (fresh.employees && fresh.employees.length > 0) {
+              setEmployees(fresh.employees)
+              registerDynamicEmployees(fresh.employees)
+            }
+            if (fresh.balances) setBalances(fresh.balances)
+          }
+        }).catch(() => {})
         pushToast("Registration Approved", data.message, "success")
       } catch (err: any) {
         pushToast("Approval Failed", err?.message, "warn")

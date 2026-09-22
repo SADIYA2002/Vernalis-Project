@@ -24,7 +24,6 @@ import {
   TODAY,
   computeMonthStats,
   formatDate,
-  getPerson,
   isWorkingDay,
   type AttendanceRecord,
 } from "@/lib/attendance-data"
@@ -52,9 +51,14 @@ function isoWeekLabel(date: string): string {
 }
 
 function Analytics() {
-  const { records } = useStore()
+  const { records, employees, getEmployee } = useStore()
 
-  const orgStats = useMemo(() => MARKING_STAFF.map((e) => computeMonthStats(records, e.id)), [records])
+  const markingStaff = useMemo(() => {
+    const staff = employees.filter((e) => e.baseRole !== "hr" && e.baseRole !== "payroll")
+    return staff.length > 0 ? staff : MARKING_STAFF
+  }, [employees])
+
+  const orgStats = useMemo(() => markingStaff.map((e) => computeMonthStats(records, e.id)), [records, markingStaff])
   const orgAttendance =
     orgStats.length ? Math.round((orgStats.reduce((s, r) => s + r.attendancePct, 0) / orgStats.length) * 10) / 10 : 0
   const totalAbsent = orgStats.reduce((s, r) => s + r.absent, 0)
@@ -65,7 +69,7 @@ function Analytics() {
   // Attendance % by department
   const deptData = useMemo(() => {
     const map = new Map<string, { sum: number; n: number }>()
-    MARKING_STAFF.forEach((e) => {
+    markingStaff.forEach((e) => {
       const st = computeMonthStats(records, e.id)
       const cur = map.get(e.department) ?? { sum: 0, n: 0 }
       cur.sum += st.attendancePct
@@ -73,7 +77,7 @@ function Analytics() {
       map.set(e.department, cur)
     })
     return Array.from(map.entries()).map(([dept, v]) => ({ dept, pct: Math.round((v.sum / v.n) * 10) / 10 }))
-  }, [records])
+  }, [records, markingStaff])
 
   // Absence trend by week (absent + leave as % of working slots)
   const trendData = useMemo(() => {
@@ -114,7 +118,7 @@ function Analytics() {
         <StatTile label="Org attendance" value={`${orgAttendance}%`} accent="green" icon={<Users className="size-4" />} />
         <StatTile label="Absence rate" value={`${absenceRate}%`} sub={`${totalAbsent} absent days`} accent={absenceRate > 5 ? "red" : "primary"} icon={<TrendingDown className="size-4" />} />
         <StatTile label="Late marks" value={totalLate} accent="amber" icon={<Clock className="size-4" />} />
-        <StatTile label="Headcount" value={MARKING_STAFF.length} sub={`${EMPLOYEES.filter((e) => e.baseRole === "manager").length} managers`} />
+        <StatTile label="Headcount" value={markingStaff.length} sub={`${employees.filter((e) => e.baseRole === "manager").length} managers`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -192,7 +196,7 @@ function Analytics() {
             .filter((s) => s.attendancePct < 90 || s.late >= 3)
             .sort((a, b) => a.attendancePct - b.attendancePct)
             .map((s) => {
-              const emp = getPerson(s.employeeId)
+              const emp = getEmployee(s.employeeId)
               return (
                 <li key={s.employeeId} className="flex items-center justify-between px-5 py-3">
                   <div className="flex items-center gap-3">
@@ -217,8 +221,12 @@ function Analytics() {
 }
 
 function Register() {
-  const { records } = useStore()
-  const [empId, setEmpId] = useState(MARKING_STAFF[0].id)
+  const { records, employees } = useStore()
+  const staff = useMemo(() => {
+    const filtered = employees.filter((e) => e.baseRole !== "hr" && e.baseRole !== "payroll")
+    return filtered.length > 0 ? filtered : MARKING_STAFF
+  }, [employees])
+  const [empId, setEmpId] = useState(staff[0]?.id ?? MARKING_STAFF[0].id)
   const empRecords = records.filter((r) => r.employeeId === empId)
   const stats = computeMonthStats(records, empId)
 
@@ -235,7 +243,7 @@ function Register() {
               onChange={(e) => setEmpId(e.target.value)}
               className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground shadow-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
             >
-              {MARKING_STAFF.map((e) => (
+              {staff.map((e) => (
                 <option key={e.id} value={e.id}>{e.name}</option>
               ))}
             </select>
@@ -286,7 +294,7 @@ function Register() {
 }
 
 function LeaveAdmin() {
-  const { leaves, balances } = useStore()
+  const { leaves, balances, getEmployee } = useStore()
   const sorted = [...leaves].sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1))
 
   return (
@@ -309,7 +317,7 @@ function LeaveAdmin() {
             <tbody className="divide-y divide-border">
               {sorted.map((l) => (
                 <tr key={l.id} className="hover:bg-muted/40">
-                  <td className="px-5 py-3 font-medium text-foreground">{getPerson(l.employeeId)?.name}</td>
+                  <td className="px-5 py-3 font-medium text-foreground">{getEmployee(l.employeeId)?.name}</td>
                   <td className="px-5 py-3">{POLICY.leaveTypes[l.type].label}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatDate(l.from, { day: "2-digit", month: "short" })} – {formatDate(l.to, { day: "2-digit", month: "short" })}</td>
                   <td className="px-5 py-3 text-right font-mono">{l.days}</td>
@@ -338,8 +346,8 @@ function LeaveAdmin() {
                 <tr key={b.employeeId} className="hover:bg-muted/40">
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
-                      <Avatar name={getPerson(b.employeeId)?.name ?? "?"} />
-                      <span className="font-medium text-foreground">{getPerson(b.employeeId)?.name}</span>
+                      <Avatar name={getEmployee(b.employeeId)?.name ?? "?"} />
+                      <span className="font-medium text-foreground">{getEmployee(b.employeeId)?.name}</span>
                     </div>
                   </td>
                   <td className="px-5 py-3 text-right font-mono">{b.casual}</td>

@@ -135,8 +135,18 @@ export const PAYROLL_USER: Employee = {
 
 export const ALL_PEOPLE = [...EMPLOYEES, HR_USER, PAYROLL_USER]
 
+const dynamicEmployeeRegistry = new Map<string, Employee>()
+
+export function registerDynamicEmployees(emps: Employee[]) {
+  for (const e of emps) {
+    if (e && e.id) {
+      dynamicEmployeeRegistry.set(e.id, e)
+    }
+  }
+}
+
 export function getPerson(id: string): Employee {
-  const found = ALL_PEOPLE.find((e) => e.id === id)
+  const found = ALL_PEOPLE.find((e) => e.id === id) || dynamicEmployeeRegistry.get(id)
   if (found) return found
   return {
     id,

@@ -9,14 +9,16 @@ import {
   computeMonthStats,
   directReports,
   formatDate,
-  getPerson,
 } from "@/lib/attendance-data"
 import { useStore } from "../store"
 import { Avatar, Card, CardHeader, EmptyState, PageHeading, StatTile, StatusBadge, inputCls } from "../ui"
 
 export function ManagerView({ section }: { section: string }) {
-  const { currentUserId } = useStore()
-  const reports = useMemo(() => directReports(currentUserId), [currentUserId])
+  const { currentUserId, employees } = useStore()
+  const reports = useMemo(() => {
+    const list = employees.filter((e) => e.managerId === currentUserId)
+    return list.length > 0 ? list : directReports(currentUserId)
+  }, [employees, currentUserId])
   if (section === "overview") return <Overview reports={reports} />
   if (section === "approvals") return <Approvals reports={reports} />
   if (section === "team") return <TeamTimesheet reports={reports} />
@@ -117,7 +119,7 @@ function ReviewActions({ onApprove, onReject }: { onApprove: (comment: string) =
 }
 
 function Approvals({ reports }: { reports: ReturnType<typeof directReports> }) {
-  const { corrections, leaves, reviewCorrection, reviewLeave, currentUserId } = useStore()
+  const { corrections, leaves, reviewCorrection, reviewLeave, currentUserId, getEmployee } = useStore()
   const reportIds = new Set(reports.map((r) => r.id))
   const pendingCor = corrections.filter((c) => reportIds.has(c.employeeId) && c.state === "pending")
   const pendingLv = leaves.filter((l) => reportIds.has(l.employeeId) && l.state === "pending")
@@ -136,9 +138,9 @@ function Approvals({ reports }: { reports: ReturnType<typeof directReports> }) {
               <li key={c.id} className="px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <Avatar name={getPerson(c.employeeId)?.name ?? "?"} />
+                    <Avatar name={getEmployee(c.employeeId)?.name ?? "?"} />
                     <div>
-                      <p className="text-sm font-medium">{getPerson(c.employeeId)?.name}</p>
+                      <p className="text-sm font-medium">{getEmployee(c.employeeId)?.name}</p>
                       <p className="text-xs text-muted-foreground">{formatDate(c.date)}</p>
                     </div>
                   </div>
@@ -172,9 +174,9 @@ function Approvals({ reports }: { reports: ReturnType<typeof directReports> }) {
               <li key={l.id} className="px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <Avatar name={getPerson(l.employeeId)?.name ?? "?"} />
+                    <Avatar name={getEmployee(l.employeeId)?.name ?? "?"} />
                     <div>
-                      <p className="text-sm font-medium">{getPerson(l.employeeId)?.name}</p>
+                      <p className="text-sm font-medium">{getEmployee(l.employeeId)?.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {POLICY.leaveTypes[l.type].label} · {formatDate(l.from)} – {formatDate(l.to)} · {l.days}d
                       </p>

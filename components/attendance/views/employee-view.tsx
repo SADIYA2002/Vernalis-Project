@@ -8,7 +8,6 @@ import {
   TODAY,
   computeMonthStats,
   formatDate,
-  getPerson,
   type AttendanceStatus,
   type LeaveType,
 } from "@/lib/attendance-data"

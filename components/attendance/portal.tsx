@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { EMPLOYEES, HR_USER, PAYROLL_USER, getPerson, type Role } from "@/lib/attendance-data"
+import { EMPLOYEES, HR_USER, PAYROLL_USER, type Role } from "@/lib/attendance-data"
 import { StoreProvider, usePendingCounts, useStore } from "./store"
 import { Avatar } from "./ui"
 import { EmployeeView } from "./views/employee-view"
