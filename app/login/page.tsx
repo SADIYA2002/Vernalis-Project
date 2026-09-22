@@ -3,7 +3,8 @@
 import { Suspense, useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { CalendarCheck, ShieldCheck, UserCheck, Lock, AlertCircle, ArrowRight, Loader2 } from "lucide-react"
+import Link from "next/link"
+import { CalendarCheck, ShieldCheck, UserCheck, Lock, AlertCircle, ArrowRight, Loader2, CheckCircle2, UserPlus } from "lucide-react"
 
 const DEMO_ACCOUNTS = [
   {
@@ -48,8 +49,10 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get("callbackUrl") || "/"
+  const isRegistered = searchParams.get("registered") === "1"
+  const prefilledEmail = searchParams.get("email") || ""
 
-  const [email, setEmail] = useState("")
+  const [email, setEmail] = useState(prefilledEmail)
   const [password, setPassword] = useState("password123")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -109,6 +112,13 @@ function LoginForm() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-xl">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-xl sm:p-8">
+          {isRegistered && (
+            <div className="mb-6 flex items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3.5 text-sm text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="size-5 shrink-0" />
+              <span>Registration successful! Please sign in with your credentials below.</span>
+            </div>
+          )}
+
           {error && (
             <div className="mb-6 flex items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3.5 text-sm text-destructive">
               <AlertCircle className="size-5 shrink-0" />
@@ -170,6 +180,17 @@ function LoginForm() {
               )}
             </button>
           </form>
+
+          {/* New employee register link */}
+          <div className="mt-4 flex items-center justify-between border-t border-border/80 pt-4 text-xs text-muted-foreground">
+            <span>Joining as a new employee?</span>
+            <Link
+              href="/register"
+              className="inline-flex items-center gap-1 font-semibold text-primary transition hover:underline"
+            >
+              <UserPlus className="size-3.5" /> Register here
+            </Link>
+          </div>
 
           {/* Quick Demo Personas */}
           <div className="mt-8">

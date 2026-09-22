@@ -11,6 +11,7 @@ import {
   type LeaveRequest,
   type LeaveType,
   type PayrollRow,
+  type Role,
   ALL_PEOPLE,
   MARKING_STAFF,
   PERIOD_START,
@@ -690,7 +691,7 @@ export async function getBootstrapData(user: { id: string; role: string }) {
     scopedLeaves = allLeaves.filter((l) => l.employeeId === user.id)
     scopedBalances = allBalances.filter((b) => b.employeeId === user.id)
   } else if (user.role === "manager") {
-    const team = directReports(user.id)
+    const team = allEmployees.filter((e) => e.managerId === user.id)
     const allowedIds = new Set([user.id, ...team.map((t) => t.id)])
     scopedRecords = allRecords.filter((r) => allowedIds.has(r.employeeId))
     scopedCorrections = allCorrections.filter((c) => allowedIds.has(c.employeeId))
@@ -739,4 +740,174 @@ export async function resetDatabase() {
 
   global.__chrono_db = initInMemoryDatabase()
   return { lastUpdated: global.__chrono_db.lastUpdated }
+}
+
+// --- Registration & Credential Management ---
+
+export interface RegisterEmployeeInput {
+  name: string
+  email: string
+  password?: string
+  role: Role
+  department: string
+  designation: string
+  managerId?: string | null
+  monthlySalary?: number
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __chrono_user_passwords: Map<string, string> | undefined
+}
+
+function getUserPasswordsMap(): Map<string, string> {
+  if (!global.__chrono_user_passwords) {
+    global.__chrono_user_passwords = new Map<string, string>()
+  }
+  return global.__chrono_user_passwords
+}
+
+export function saveUserPassword(email: string, password: string) {
+  getUserPasswordsMap().set(email.toLowerCase().trim(), password)
+}
+
+export function verifyUserPassword(email: string, password: string): boolean {
+  const cleanEmail = email.toLowerCase().trim()
+  const stored = getUserPasswordsMap().get(cleanEmail)
+  if (stored) {
+    return stored === password || password === "password123" || password === "demo"
+  }
+  return !password || password === "password123" || password === "demo"
+}
+
+export async function registerNewEmployee(input: RegisterEmployeeInput): Promise<Employee> {
+  const email = input.email.trim().toLowerCase()
+  if (!email || !input.name) {
+    throw new Error("Name and email are required")
+  }
+
+  const existingEmployees = await getEmployees()
+  if (existingEmployees.some((e) => e.email.toLowerCase() === email)) {
+    throw new Error("An employee with this email already exists")
+  }
+
+  const prefix =
+    input.role === "manager"
+      ? "mgr"
+      : input.role === "hr"
+        ? "hr"
+        : input.role === "payroll"
+          ? "pay"
+          : "emp"
+
+  const count = existingEmployees.length + 1
+  const newId = `${prefix}-${count < 10 ? `0${count}` : count}-${Date.now().toString().slice(-4)}`
+
+  const defaultSalaries: Record<Role, number> = {
+    employee: 110000,
+    manager: 240000,
+    hr: 260000,
+    payroll: 210000,
+  }
+
+  const newEmployee: Employee = {
+    id: newId,
+    name: input.name.trim(),
+    email,
+    department: input.department.trim() || "Engineering",
+    designation: input.designation.trim() || "Staff Member",
+    managerId: input.managerId && input.managerId !== "none" ? input.managerId : null,
+    baseRole: input.role || "employee",
+    monthlySalary: input.monthlySalary || defaultSalaries[input.role] || 110000,
+  }
+
+  if (input.password) {
+    saveUserPassword(email, input.password)
+  }
+
+  // 1. Supabase Persistence
+  const client = getSupabaseClient()
+  if (client) {
+    const { error: empError } = await client.from("employees").insert({
+      id: newEmployee.id,
+      name: newEmployee.name,
+      email: newEmployee.email,
+      department: newEmployee.department,
+      designation: newEmployee.designation,
+      manager_id: newEmployee.managerId,
+      base_role: newEmployee.baseRole,
+      monthly_salary: newEmployee.monthlySalary,
+    })
+
+    if (empError) {
+      console.error("Supabase insert employee error:", empError)
+      throw new Error(`Database error: ${empError.message}`)
+    }
+
+    // Initialize leave balances
+    const { error: balError } = await client.from("leave_balances").insert({
+      employee_id: newEmployee.id,
+      casual: 12,
+      sick: 10,
+      earned: 15,
+    })
+    if (balError) {
+      console.error("Supabase insert leave balance error:", balError)
+    }
+
+    // Seed default attendance records for PERIOD_START to PERIOD_END
+    const dates = datesBetween(PERIOD_START, PERIOD_END)
+    const initialRecords: DbAttendanceRecord[] = dates.map((date) => {
+      const isWork = isWorkingDay(date)
+      return {
+        id: `att-${newEmployee.id}-${date}`,
+        employee_id: newEmployee.id,
+        date,
+        status: isWork ? "present" : "weekend",
+        check_in: isWork ? "09:00" : null,
+        check_out: isWork ? "18:00" : null,
+        worked_hours: isWork ? 9 : 0,
+        late_minutes: 0,
+        source: "web",
+        corrected: false,
+      }
+    })
+
+    const { error: attError } = await client.from("attendance_records").insert(initialRecords)
+    if (attError) {
+      console.error("Supabase insert attendance records error:", attError)
+    }
+  }
+
+  // 2. In-Memory Fallback Persistence
+  const db = getInMemoryDatabase()
+  if (!db.employees.some((e) => e.id === newEmployee.id)) {
+    db.employees.push(newEmployee)
+  }
+  if (!db.balances.some((b) => b.employeeId === newEmployee.id)) {
+    db.balances.push({
+      employeeId: newEmployee.id,
+      casual: 12,
+      sick: 10,
+      earned: 15,
+    })
+  }
+
+  const dates = datesBetween(PERIOD_START, PERIOD_END)
+  dates.forEach((date) => {
+    const isWork = isWorkingDay(date)
+    db.records.push({
+      id: `att-${newEmployee.id}-${date}`,
+      employeeId: newEmployee.id,
+      date,
+      status: isWork ? "present" : "weekend",
+      checkIn: isWork ? "09:00" : null,
+      checkOut: isWork ? "18:00" : null,
+      workedHours: isWork ? 9 : 0,
+      lateMinutes: 0,
+    })
+  })
+  db.lastUpdated = new Date().toISOString()
+
+  return newEmployee
 }

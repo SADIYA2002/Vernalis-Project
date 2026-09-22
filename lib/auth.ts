@@ -59,15 +59,27 @@ export const authOptions: NextAuthOptions = {
         }
 
         const email = credentials.email.trim().toLowerCase()
-        const person = ALL_PEOPLE.find((p) => p.email.toLowerCase() === email || p.id.toLowerCase() === email)
+        const { getEmployees, verifyUserPassword } = await import("@/lib/server/attendance-db")
+
+        let person = ALL_PEOPLE.find((p) => p.email.toLowerCase() === email || p.id.toLowerCase() === email)
+
+        try {
+          const employees = await getEmployees()
+          const dbPerson = employees.find((p) => p.email.toLowerCase() === email || p.id.toLowerCase() === email)
+          if (dbPerson) {
+            person = dbPerson
+          }
+        } catch (err) {
+          console.error("Error fetching employees in auth:", err)
+        }
 
         if (!person) {
           return null
         }
 
-        // Demo password: accept 'password123' or empty/demo password
+        // Verify password
         const password = credentials.password || ""
-        if (password && password !== "password123" && password !== "demo") {
+        if (!verifyUserPassword(email, password)) {
           return null
         }
 

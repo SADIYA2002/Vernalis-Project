@@ -19,8 +19,8 @@ export async function middleware(req: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET || "chrono-attendance-portal-super-secret-key-32-chars-minimum-prod",
   })
 
-  // If visiting /login while already authenticated, redirect to root portal
-  if (pathname === "/login") {
+  // If visiting /login or /register while already authenticated, redirect to root portal
+  if (pathname === "/login" || pathname === "/register") {
     if (token) {
       return NextResponse.redirect(new URL("/", req.url))
     }
@@ -66,5 +66,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/portal/:path*", "/login"],
+  matcher: ["/portal/:path*", "/login", "/register"],
 }
