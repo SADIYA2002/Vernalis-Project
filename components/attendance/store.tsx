@@ -382,11 +382,15 @@ export function StoreProvider({
 
     async submitCorrection(input) {
       const tempId = `cor-${Date.now()}`
+      const isHrSelf = (role === "hr" || getEmployee(input.employeeId)?.baseRole === "hr") && input.employeeId === currentUserId
+
       const optimisticCorrection: CorrectionRequest = {
         id: tempId,
         ...input,
-        state: "pending",
+        state: isHrSelf ? "approved" : "pending",
         submittedAt: new Date().toISOString(),
+        reviewedBy: isHrSelf ? currentUserId : undefined,
+        reviewComment: isHrSelf ? "Auto-approved for HR" : undefined,
       }
 
       setCorrections((prev) => {
@@ -394,7 +398,32 @@ export function StoreProvider({
         persistCurrent({ corrections: nextCorrections })
         return nextCorrections
       })
-      pushToast("Correction submitted", "Your manager will review the request.", "info")
+
+      if (isHrSelf) {
+        const optimisticRecord: AttendanceRecord = {
+          id: `${input.employeeId}-${input.date}`,
+          employeeId: input.employeeId,
+          date: input.date,
+          status: input.toStatus,
+          checkIn: input.requestedCheckIn,
+          checkOut: input.requestedCheckOut,
+          workedHours: workedHoursFrom(input.requestedCheckIn, input.requestedCheckOut),
+          lateMinutes: lateMinutesFrom(input.requestedCheckIn),
+          corrected: true,
+          note: `Auto-approved correction by HR (${currentUserId})`,
+        }
+
+        setRecords((prev) => {
+          const idx = prev.findIndex((r) => r.employeeId === input.employeeId && r.date === input.date)
+          const nextRecords = idx === -1 ? [...prev, optimisticRecord] : prev.map((r, i) => (i === idx ? optimisticRecord : r))
+          persistCurrent({ records: nextRecords })
+          return nextRecords
+        })
+
+        pushToast("Correction auto-approved", "Your attendance record has been updated immediately.", "success")
+      } else {
+        pushToast("Correction submitted", "Your manager will review the request.", "info")
+      }
 
       try {
         const created = await apiClient.submitCorrection(input)
@@ -403,6 +432,15 @@ export function StoreProvider({
           persistCurrent({ corrections: nextCorrections })
           return nextCorrections
         })
+
+        if (created.updatedRecord) {
+          setRecords((prev) => {
+            const idx = prev.findIndex((r) => r.employeeId === created.updatedRecord!.employeeId && r.date === created.updatedRecord!.date)
+            const nextRecords = idx === -1 ? [...prev, created.updatedRecord!] : prev.map((r, i) => (i === idx ? created.updatedRecord! : r))
+            persistCurrent({ records: nextRecords })
+            return nextRecords
+          })
+        }
       } catch (err) {
         console.warn("[StoreProvider] API submitCorrection error:", err)
       }

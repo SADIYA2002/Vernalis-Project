@@ -65,6 +65,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const targetEmployeeId = user.role === "employee" ? user.id : (employeeId || user.id)
+
     // Security check: You can only submit corrections for yourself
     if (user.role === "employee" && employeeId !== user.id) {
       return NextResponse.json(
@@ -73,17 +75,25 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const correction = await createCorrection({
-      employeeId: user.role === "employee" ? user.id : employeeId,
+    // HR auto-approval rule: If HR requests a correction for herself, approve automatically without requiring approval
+    const isHrForHerself = user.role === "hr" && targetEmployeeId === user.id
+
+    const result = await createCorrection({
+      employeeId: targetEmployeeId,
       date,
       fromStatus: fromStatus as AttendanceStatus,
       toStatus: toStatus as AttendanceStatus,
       requestedCheckIn: requestedCheckIn ?? null,
       requestedCheckOut: requestedCheckOut ?? null,
       reason: reason.trim(),
+      autoApprove: isHrForHerself,
+      reviewerId: isHrForHerself ? user.id : undefined,
     })
 
-    return NextResponse.json(correction, { status: 201 })
+    return NextResponse.json(
+      { ...result.correction, updatedRecord: result.updatedRecord },
+      { status: 201 },
+    )
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to create correction" },

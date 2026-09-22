@@ -331,7 +331,8 @@ function Timesheet({ records }: { records: ReturnType<typeof useStore>["records"
 const CORRECTION_TARGETS: AttendanceStatus[] = ["present", "wfh", "half-day", "late", "leave", "absent"]
 
 function Corrections() {
-  const { currentUserId, records, corrections, submitCorrection } = useStore()
+  const { currentUserId, role, getEmployee, records, corrections, submitCorrection } = useStore()
+  const isHrSelf = (role === "hr" || getEmployee(currentUserId)?.baseRole === "hr")
   const systemToday = getSystemToday()
   const maxDate = systemToday > TODAY ? systemToday : TODAY
   const myRecords = records.filter((r) => r.employeeId === currentUserId && r.date <= maxDate && r.status !== "weekend" && r.status !== "holiday")
@@ -366,6 +367,11 @@ function Corrections() {
         <Card>
           <CardHeader title="Raise a correction" />
           <div className="flex flex-col gap-4 p-5">
+            {isHrSelf && (
+              <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-xs font-medium text-primary">
+                As HR, corrections for your own attendance are self-approved and immediately applied without requiring manager review.
+              </div>
+            )}
             <Field label="Date">
               <select value={date} onChange={(e) => setDate(e.target.value)} className={inputCls}>
                 {[...myRecords].reverse().map((r) => (
@@ -400,7 +406,7 @@ function Corrections() {
               disabled={!reason.trim() || !current}
               className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
             >
-              Submit for approval
+              {isHrSelf ? "Approve & Update Attendance" : "Submit for approval"}
             </button>
           </div>
         </Card>
@@ -423,7 +429,7 @@ function Corrections() {
                   <p className="mt-1.5 text-sm text-foreground/80">{c.reason}</p>
                   {c.reviewComment ? (
                     <p className="mt-1.5 rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
-                      Manager: {c.reviewComment}
+                      {c.reviewedBy === currentUserId || c.reviewComment.includes("Auto-approved") ? "HR (Self)" : "Manager"}: {c.reviewComment}
                     </p>
                   ) : null}
                 </li>

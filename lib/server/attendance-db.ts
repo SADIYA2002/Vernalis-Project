@@ -271,12 +271,39 @@ export async function createCorrection(input: {
   requestedCheckIn: string | null
   requestedCheckOut: string | null
   reason: string
-}): Promise<CorrectionRequest> {
+  autoApprove?: boolean
+  reviewerId?: string
+}): Promise<{ correction: CorrectionRequest; updatedRecord?: AttendanceRecord }> {
+  const isAuto = Boolean(input.autoApprove)
+  const now = new Date().toISOString()
+  const reviewer = input.reviewerId || (isAuto ? input.employeeId : undefined)
+
   const newCorrection: CorrectionRequest = {
     id: `cor-${Date.now()}`,
-    ...input,
-    state: "pending",
-    submittedAt: new Date().toISOString(),
+    employeeId: input.employeeId,
+    date: input.date,
+    fromStatus: input.fromStatus,
+    toStatus: input.toStatus,
+    requestedCheckIn: input.requestedCheckIn,
+    requestedCheckOut: input.requestedCheckOut,
+    reason: input.reason,
+    state: isAuto ? "approved" : "pending",
+    submittedAt: now,
+    reviewedBy: isAuto ? reviewer : undefined,
+    reviewComment: isAuto ? "Auto-approved for HR" : undefined,
+  }
+
+  let updatedRecord: AttendanceRecord | undefined
+  if (isAuto) {
+    updatedRecord = await upsertAttendance({
+      employeeId: input.employeeId,
+      date: input.date,
+      status: input.toStatus,
+      checkIn: input.requestedCheckIn,
+      checkOut: input.requestedCheckOut,
+      corrected: true,
+      note: `Auto-approved correction by HR (${reviewer})`,
+    })
   }
 
   const client = getSupabaseClient()
@@ -284,15 +311,15 @@ export async function createCorrection(input: {
     const dbRow = mapCorrectionToDb(newCorrection)
     const { error } = await client.from("correction_requests").insert(dbRow)
     if (!error) {
-      return newCorrection
+      return { correction: newCorrection, updatedRecord }
     }
     console.warn("[Supabase] Failed to insert correction_request, falling back to memory:", error.message)
   }
 
   const db = getInMemoryDatabase()
   db.corrections.unshift(newCorrection)
-  db.lastUpdated = new Date().toISOString()
-  return newCorrection
+  db.lastUpdated = now
+  return { correction: newCorrection, updatedRecord }
 }
 
 export async function reviewCorrection(

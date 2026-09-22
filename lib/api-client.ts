@@ -44,6 +44,10 @@ export interface ReviewCorrectionResponse {
   updatedRecord?: AttendanceRecord
 }
 
+export type SubmitCorrectionResponse = CorrectionRequest & {
+  updatedRecord?: AttendanceRecord
+}
+
 export interface ReviewLeaveResponse {
   leave: LeaveRequest
   updatedRecords: AttendanceRecord[]
@@ -121,8 +125,8 @@ export const apiClient = {
     requestedCheckIn: string | null
     requestedCheckOut: string | null
     reason: string
-  }): Promise<CorrectionRequest> {
-    return request<CorrectionRequest>("/api/corrections", {
+  }): Promise<SubmitCorrectionResponse> {
+    return request<SubmitCorrectionResponse>("/api/corrections", {
       method: "POST",
       body: JSON.stringify(input),
     })
