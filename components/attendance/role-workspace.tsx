@@ -36,7 +36,6 @@ const NAV: Record<Role, NavItem[]> = {
   manager: [
     { id: "overview", label: "Team Overview", icon: LayoutGrid },
     { id: "approvals", label: "Approvals", icon: ListChecks, badge: "both" },
-    { id: "registrations", label: "New Joinees", icon: UserCheck, badge: "registrations" },
     { id: "team", label: "Team Timesheet", icon: Users },
   ],
   hr: [

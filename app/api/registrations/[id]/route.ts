@@ -10,7 +10,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAuth(req, ["hr", "manager", "payroll"])
+  // Only HR administrators are authorized to approve or reject registrations
+  const auth = await requireAuth(req, ["hr"])
   if (auth.errorResponse) {
     return auth.errorResponse
   }
@@ -34,22 +35,6 @@ export async function POST(
 
     if (!target) {
       return NextResponse.json({ error: "Registration request not found." }, { status: 404 })
-    }
-
-    // Manager can only approve requests assigned to their team (or unassigned)
-    if (user.role === "manager" && target.managerId && target.managerId !== user.id) {
-      return NextResponse.json(
-        { error: "Forbidden. You can only review registration requests for your own team." },
-        { status: 403 },
-      )
-    }
-
-    // Payroll officer can only approve requests for Payroll role or Finance department
-    if (user.role === "payroll" && target.role !== "payroll" && target.department !== "Finance") {
-      return NextResponse.json(
-        { error: "Forbidden. You can only review registration requests for the Payroll / Finance department." },
-        { status: 403 },
-      )
     }
 
     if (action === "approve") {

@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       {
         success: true,
         pendingApproval: true,
-        message: "Registration submitted successfully. Awaiting approval from HR or your Reporting Manager.",
+        message: "Registration submitted successfully. Awaiting approval from HR.",
         request: {
           id: regRequest.id,
           name: regRequest.name,

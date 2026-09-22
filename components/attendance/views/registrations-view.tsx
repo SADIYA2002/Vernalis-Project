@@ -6,7 +6,8 @@ import { useStore, type RegistrationRequest } from "../store"
 import { PageHeading, Card, CardHeader } from "../ui"
 
 export function RegistrationsView() {
-  const { registrationRequests, approveRegistration, rejectRegistration } = useStore()
+  const { role, registrationRequests, approveRegistration, rejectRegistration } = useStore()
+  const isHR = role === "hr"
   const [liveRequests, setLiveRequests] = useState<RegistrationRequest[] | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [filter, setFilter] = useState<"pending" | "all" | "approved" | "rejected">("pending")
@@ -224,25 +225,33 @@ export function RegistrationsView() {
                     </div>
                   </div>
 
-                  {/* Actions */}
+                  {/* Actions: Only HR is authorized to approve or reject */}
                   {isPending && (
                     <div className="flex items-center gap-2 self-end sm:self-center">
-                      <button
-                        onClick={() => handleReject(req.id)}
-                        disabled={isLoading}
-                        className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
-                      >
-                        <X className="size-3.5" /> Reject
-                      </button>
+                      {isHR ? (
+                        <>
+                          <button
+                            onClick={() => handleReject(req.id)}
+                            disabled={isLoading}
+                            className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+                          >
+                            <X className="size-3.5" /> Reject
+                          </button>
 
-                      <button
-                        onClick={() => handleApprove(req.id)}
-                        disabled={isLoading}
-                        className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
-                      >
-                        <Check className="size-3.5" />
-                        {isLoading ? "Approving..." : "Approve & Activate"}
-                      </button>
+                          <button
+                            onClick={() => handleApprove(req.id)}
+                            disabled={isLoading}
+                            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            <Check className="size-3.5" />
+                            {isLoading ? "Approving..." : "Approve & Activate"}
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs italic text-muted-foreground">
+                          Awaiting HR Approval
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>

@@ -638,13 +638,13 @@ export function useStore() {
 }
 
 export function usePendingCounts() {
-  const { corrections, leaves, registrationRequests } = useStore()
+  const { role, corrections, leaves, registrationRequests } = useStore()
   return useMemo(
     () => ({
       corrections: corrections.filter((c) => c.state === "pending").length,
       leaves: leaves.filter((l) => l.state === "pending").length,
-      registrations: (registrationRequests || []).filter((r) => r.status === "pending").length,
+      registrations: role === "hr" ? (registrationRequests || []).filter((r) => r.status === "pending").length : 0,
     }),
-    [corrections, leaves, registrationRequests],
+    [role, corrections, leaves, registrationRequests],
   )
 }

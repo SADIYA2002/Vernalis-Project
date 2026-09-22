@@ -141,7 +141,7 @@ function RegisterForm() {
             </div>
 
             <p className="mt-4 text-xs text-muted-foreground">
-              An HR Administrator (Meera Joshi) or your designated manager will review and approve your registration. Once approved, you can sign in with your credentials.
+              An HR Administrator (Meera Joshi) will review and approve your registration. Once approved, you can sign in with your credentials.
             </p>
 
             <div className="mt-6">
