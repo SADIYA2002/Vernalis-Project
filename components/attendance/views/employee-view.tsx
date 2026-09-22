@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { CalendarClock, Clock, Home, Inbox, TrendingUp } from "lucide-react"
 import {
   POLICY,
@@ -116,17 +116,38 @@ const MARK_OPTIONS: AttendanceStatus[] = ["present", "wfh", "half-day", "leave"]
 
 function MarkAttendance() {
   const { currentUserId, records, markAttendance } = useStore()
-  const today = records.find((r) => r.employeeId === currentUserId && r.date === TODAY)
-  const [status, setStatus] = useState<AttendanceStatus>(today?.status && MARK_OPTIONS.includes(today.status) ? today.status : "present")
-  const [checkIn, setCheckIn] = useState(today?.checkIn ?? "09:00")
-  const [checkOut, setCheckOut] = useState(today?.checkOut ?? "18:00")
+  const [calendarMonth, setCalendarMonth] = useState("2026-08")
+  const [selectedDate, setSelectedDate] = useState<string>(TODAY)
+
+  const activeRecord = records.find((r) => r.employeeId === currentUserId && r.date === selectedDate)
+  const isToday = selectedDate === TODAY
+
+  const [status, setStatus] = useState<AttendanceStatus>(
+    activeRecord?.status && MARK_OPTIONS.includes(activeRecord.status) ? activeRecord.status : "present",
+  )
+  const [checkIn, setCheckIn] = useState(activeRecord?.checkIn ?? "09:00")
+  const [checkOut, setCheckOut] = useState(activeRecord?.checkOut ?? "18:00")
+
+  // Sync status and punch inputs when selected date changes
+  useEffect(() => {
+    const rec = records.find((r) => r.employeeId === currentUserId && r.date === selectedDate)
+    if (rec && MARK_OPTIONS.includes(rec.status)) {
+      setStatus(rec.status)
+      setCheckIn(rec.checkIn ?? "09:00")
+      setCheckOut(rec.checkOut ?? "18:00")
+    } else {
+      setStatus("present")
+      setCheckIn("09:00")
+      setCheckOut("18:00")
+    }
+  }, [selectedDate, records, currentUserId])
 
   const needsTimes = status === "present" || status === "wfh" || status === "half-day"
 
   function submit() {
     markAttendance({
       employeeId: currentUserId,
-      date: TODAY,
+      date: selectedDate,
       status,
       checkIn: needsTimes ? checkIn : null,
       checkOut: needsTimes ? checkOut : null,
@@ -135,10 +156,30 @@ function MarkAttendance() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title="Mark attendance" description={`Record today's attendance — ${formatDate(TODAY)}. Shift ${POLICY.shiftStart}–${POLICY.shiftEnd}, grace ${POLICY.graceMinutes} min.`} />
+      <PageHeading
+        title="Mark attendance"
+        description={`Record attendance — ${formatDate(selectedDate)}. Shift ${POLICY.shiftStart}–${POLICY.shiftEnd}, grace ${POLICY.graceMinutes} min.`}
+      />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_1fr]">
         <Card>
-          <CardHeader title="Today" description={formatDate(TODAY, { weekday: "long", day: "2-digit", month: "long" })} />
+          <CardHeader
+            title={isToday ? "Today" : formatDate(selectedDate, { weekday: "short", day: "2-digit", month: "short" })}
+            description={formatDate(selectedDate, { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+            action={
+              !isToday ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDate(TODAY)
+                    setCalendarMonth(TODAY.slice(0, 7))
+                  }}
+                  className="rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-primary transition hover:bg-accent"
+                >
+                  Back to Today
+                </button>
+              ) : null
+            }
+          />
           <div className="flex flex-col gap-4 p-5">
             <div>
               <p className="mb-2 text-xs font-medium text-foreground">Status</p>
@@ -176,20 +217,31 @@ function MarkAttendance() {
               </p>
             ) : null}
             <button onClick={submit} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90">
-              {today?.checkIn ? "Update today's attendance" : "Save attendance"}
+              {activeRecord?.checkIn || activeRecord?.status
+                ? (isToday ? "Update today's attendance" : `Update ${formatDate(selectedDate, { day: "numeric", month: "short" })} attendance`)
+                : (isToday ? "Save attendance" : `Save ${formatDate(selectedDate, { day: "numeric", month: "short" })} attendance`)}
             </button>
-            {today ? (
+            {activeRecord ? (
               <p className="text-center text-xs text-muted-foreground">
-                Currently recorded as <span className="font-medium text-foreground">{STATUS_META[today.status].label}</span>
+                Currently recorded as <span className="font-medium text-foreground">{STATUS_META[activeRecord.status].label}</span>
               </p>
             ) : null}
           </div>
         </Card>
 
         <Card>
-          <CardHeader title="August 2026" description="Your month at a glance. Past days can be fixed via Corrections." />
+          <CardHeader
+            title="Monthly Calendar"
+            description="Your month at a glance. Navigate months or click any day to view details and mark attendance."
+          />
           <div className="p-5">
-            <MonthCalendar records={records.filter((r) => r.employeeId === currentUserId)} />
+            <MonthCalendar
+              records={records.filter((r) => r.employeeId === currentUserId)}
+              month={calendarMonth}
+              onMonthChange={setCalendarMonth}
+              selectedDate={selectedDate}
+              onSelectDay={setSelectedDate}
+            />
             <div className="mt-4 border-t border-border pt-4">
               <CalendarLegend />
             </div>
@@ -201,12 +253,40 @@ function MarkAttendance() {
 }
 
 function Timesheet({ records }: { records: ReturnType<typeof useStore>["records"] }) {
-  const rows = [...records].filter((r) => r.date <= TODAY).sort((a, b) => (a.date < b.date ? 1 : -1))
+  const [selectedMonth, setSelectedMonth] = useState("2026-08")
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>()
+    records.forEach((r) => set.add(r.date.slice(0, 7)))
+    set.add("2026-08")
+    set.add(TODAY.slice(0, 7))
+    return Array.from(set).sort().reverse()
+  }, [records])
+
+  const rows = [...records]
+    .filter((r) => r.date.startsWith(selectedMonth))
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title="My timesheet" description="Every recorded day with check-in / check-out and worked hours." />
       <Card>
-        <CardHeader title="Daily records" description="August 2026" />
+        <CardHeader
+          title="Daily records"
+          description={`Timesheet entries for ${formatDate(`${selectedMonth}-01`, { month: "long", year: "numeric" })}`}
+          action={
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+            >
+              {availableMonths.map((m) => (
+                <option key={m} value={m}>
+                  {formatDate(`${m}-01`, { month: "long", year: "numeric" })}
+                </option>
+              ))}
+            </select>
+          }
+        />
         <div className="overflow-x-auto">
           <table className="w-full min-w-[550px] text-sm">
             <thead>

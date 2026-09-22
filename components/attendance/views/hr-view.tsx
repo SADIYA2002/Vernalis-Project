@@ -227,8 +227,17 @@ function Register() {
     return filtered.length > 0 ? filtered : MARKING_STAFF
   }, [employees])
   const [empId, setEmpId] = useState(staff[0]?.id ?? MARKING_STAFF[0].id)
+  const [month, setMonth] = useState("2026-08")
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+
   const empRecords = records.filter((r) => r.employeeId === empId)
-  const stats = computeMonthStats(records, empId)
+
+  // Dynamically compute month boundaries for muster stats
+  const [y, m] = month.split("-").map(Number)
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  const monthStart = `${month}-01`
+  const monthEnd = `${month}-${String(daysInMonth).padStart(2, "0")}`
+  const stats = computeMonthStats(records, empId, monthStart, monthEnd)
 
   return (
     <div className="flex flex-col gap-6">
@@ -236,7 +245,8 @@ function Register() {
 
       <Card>
         <CardHeader
-          title="Employee register"
+          title={`Employee register — ${formatDate(`${month}-01`, { month: "long", year: "numeric" })}`}
+          description="Statutory muster breakdown by employee and month."
           action={
             <select
               value={empId}
@@ -251,7 +261,13 @@ function Register() {
         />
         <div className="grid gap-6 p-5 lg:grid-cols-[1fr_260px]">
           <div>
-            <MonthCalendar records={empRecords} />
+            <MonthCalendar
+              records={empRecords}
+              month={month}
+              onMonthChange={setMonth}
+              selectedDate={selectedDate ?? undefined}
+              onSelectDay={setSelectedDate}
+            />
             <div className="mt-4 border-t border-border pt-4">
               <CalendarLegend />
             </div>
