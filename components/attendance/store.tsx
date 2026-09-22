@@ -1,15 +1,18 @@
 "use client"
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useSession } from "next-auth/react"
 import {
   type AttendanceRecord,
   type AttendanceStatus,
   type CorrectionRequest,
+  type Employee,
   type LeaveBalance,
   type LeaveRequest,
   type LeaveType,
   type Role,
+  ALL_PEOPLE,
+  getPerson,
   datesBetween,
   isWorkingDay,
   POLICY,
@@ -52,6 +55,9 @@ export interface StoreValue {
   setRole: (r: Role) => void
   currentUserId: string
   setCurrentUserId: (id: string) => void
+
+  employees: Employee[]
+  getEmployee: (id: string) => Employee
 
   records: AttendanceRecord[]
   corrections: CorrectionRequest[]
@@ -133,6 +139,7 @@ export function StoreProvider({
 
   const [role, setRoleState] = useState<Role>(initialRole || seed.session.role)
   const [currentUserId, setCurrentUserIdState] = useState<string>(seed.session.currentUserId)
+  const [employees, setEmployees] = useState<Employee[]>(ALL_PEOPLE)
   const [records, setRecords] = useState<AttendanceRecord[]>(seed.records)
   const [corrections, setCorrections] = useState<CorrectionRequest[]>(seed.corrections)
   const [leaves, setLeaves] = useState<LeaveRequest[]>(seed.leaves)
@@ -141,6 +148,13 @@ export function StoreProvider({
   const [toasts, setToasts] = useState<Toast[]>([])
   const [backend, setBackend] = useState<"supabase" | "memory">("memory")
   const [isLoaded, setIsLoaded] = useState(false)
+
+  const getEmployee = useCallback(
+    (id: string): Employee => {
+      return employees.find((e) => e.id === id) || getPerson(id)
+    },
+    [employees],
+  )
 
   // Sync session user ID and role when NextAuth session resolves
   useEffect(() => {
@@ -167,6 +181,9 @@ export function StoreProvider({
       try {
         const bootstrap = await apiClient.getBootstrap()
         if (active && bootstrap) {
+          if (bootstrap.employees && bootstrap.employees.length > 0) {
+            setEmployees(bootstrap.employees)
+          }
           setRecords(bootstrap.records)
           setCorrections(bootstrap.corrections)
           setLeaves(bootstrap.leaves)
@@ -313,6 +330,8 @@ export function StoreProvider({
     setRole,
     currentUserId,
     setCurrentUserId,
+    employees,
+    getEmployee,
     records,
     corrections,
     leaves,

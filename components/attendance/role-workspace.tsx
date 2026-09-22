@@ -54,11 +54,11 @@ const NAV: Record<Role, NavItem[]> = {
 }
 
 export function RoleWorkspace({ role }: { role: Role }) {
-  const { currentUserId, setRole } = useStore()
+  const { currentUserId, setRole, getEmployee } = useStore()
   const pending = usePendingCounts()
   const nav = NAV[role]
   const [section, setSection] = useState<string>(nav[0].id)
-  const person = getPerson(currentUserId)
+  const person = getEmployee(currentUserId)
 
   // Ensure active role in store matches the workspace
   useEffect(() => {

@@ -135,8 +135,19 @@ export const PAYROLL_USER: Employee = {
 
 export const ALL_PEOPLE = [...EMPLOYEES, HR_USER, PAYROLL_USER]
 
-export function getPerson(id: string): Employee | undefined {
-  return ALL_PEOPLE.find((e) => e.id === id)
+export function getPerson(id: string): Employee {
+  const found = ALL_PEOPLE.find((e) => e.id === id)
+  if (found) return found
+  return {
+    id,
+    name: id.startsWith("emp-") || id.startsWith("mgr-") ? `Employee (${id})` : id,
+    email: `${id}@acme.co`,
+    department: "Engineering",
+    designation: "Staff Member",
+    managerId: "mgr-01",
+    baseRole: id.startsWith("mgr-") ? "manager" : "employee",
+    monthlySalary: 110000,
+  }
 }
 
 export function directReports(managerId: string): Employee[] {

@@ -17,10 +17,10 @@ import { CalendarLegend, MonthCalendar } from "../calendar"
 import { Card, CardHeader, EmptyState, Field, PageHeading, StatTile, StateBadge, StatusBadge, inputCls } from "../ui"
 
 export function EmployeeView({ section }: { section: string }) {
-  const { currentUserId, records } = useStore()
+  const { currentUserId, records, getEmployee } = useStore()
   const myRecords = useMemo(() => records.filter((r) => r.employeeId === currentUserId), [records, currentUserId])
   const stats = useMemo(() => computeMonthStats(records, currentUserId), [records, currentUserId])
-  const person = getPerson(currentUserId)
+  const person = getEmployee(currentUserId)
 
   if (section === "dashboard") return <Dashboard stats={stats} name={person?.name ?? ""} />
   if (section === "mark") return <MarkAttendance />

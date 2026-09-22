@@ -10,7 +10,6 @@ import {
   computePayrollRow,
   formatCurrency,
   formatDate,
-  getPerson,
   type PayrollRow,
 } from "@/lib/attendance-data"
 import { useStore } from "@/components/attendance/store"
@@ -19,7 +18,7 @@ import { Avatar, Card, CardHeader, PageHeading, StatTile } from "@/components/at
 import { RegistrationsView } from "./registrations-view"
 
 export function PayrollView({ section }: { section: string }) {
-  const { records, leaves, corrections, pushToast } = useStore()
+  const { records, leaves, corrections, pushToast, getEmployee } = useStore()
   const [serverPayroll, setServerPayroll] = useState<ServerPayrollSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [lockLoading, setLockLoading] = useState(false)
@@ -103,7 +102,7 @@ export function PayrollView({ section }: { section: string }) {
       "Net Attendance Pay",
     ]
     const lines = rows.map((r) => {
-      const p = getPerson(r.employeeId)!
+      const p = getEmployee(r.employeeId)
       return [
         p.name,
         p.department,
@@ -221,6 +220,7 @@ export function PayrollView({ section }: { section: string }) {
 }
 
 function PayrollInputsTable({ rows, onSelect }: { rows: PayrollRow[]; onSelect: (id: string) => void }) {
+  const { getEmployee } = useStore()
   return (
     <Card>
       <CardHeader
@@ -243,7 +243,7 @@ function PayrollInputsTable({ rows, onSelect }: { rows: PayrollRow[]; onSelect: 
           </thead>
           <tbody>
             {rows.map((r) => {
-              const p = getPerson(r.employeeId)!
+              const p = getEmployee(r.employeeId)
               return (
                 <tr
                   key={r.employeeId}
@@ -285,10 +285,11 @@ function PayrollInputsTable({ rows, onSelect }: { rows: PayrollRow[]; onSelect: 
 }
 
 function PayrollDetail({ row, onBack }: { row: PayrollRow; onBack: () => void }) {
-  const p = getPerson(row.employeeId)!
+  const { getEmployee } = useStore()
+  const p = getEmployee(row.employeeId)
   const steps = [
     { label: "Gross monthly salary", value: formatCurrency(p.monthlySalary) },
-    { label: "Standard working days in period", value: `${Math.round(p.monthlySalary / row.perDay)} days` },
+    { label: "Standard working days in period", value: `${Math.round(p.monthlySalary / (row.perDay || 1))} days` },
     { label: "Per-day rate", value: formatCurrency(row.perDay) },
     { label: "Payable days (present + WFH + paid leave − ½ days − late)", value: `${row.payableDays.toFixed(1)} days` },
     { label: "Loss-of-pay days (absent + unpaid leave)", value: `${row.lopDays.toFixed(1)} days` },
@@ -341,6 +342,7 @@ function PayrollDetail({ row, onBack }: { row: PayrollRow; onBack: () => void })
 }
 
 function RegisterSummary({ rows }: { rows: PayrollRow[] }) {
+  const { getEmployee } = useStore()
   return (
     <Card>
       <CardHeader
@@ -363,7 +365,7 @@ function RegisterSummary({ rows }: { rows: PayrollRow[] }) {
           </thead>
           <tbody>
             {rows.map((r) => {
-              const p = getPerson(r.employeeId)!
+              const p = getEmployee(r.employeeId)
               return (
                 <tr key={r.employeeId} className="border-b border-border/60 last:border-0">
                   <td className="px-5 py-3">

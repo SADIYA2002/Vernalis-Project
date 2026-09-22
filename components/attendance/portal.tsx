@@ -231,12 +231,12 @@ function PersistenceMenu() {
 }
 
 function Shell() {
-  const { role, setRole, currentUserId, setCurrentUserId } = useStore()
+  const { role, setRole, currentUserId, setCurrentUserId, getEmployee } = useStore()
   const pending = usePendingCounts()
   const [section, setSection] = useState<string>(NAV[role][0].id)
 
   const nav = NAV[role]
-  const person = getPerson(currentUserId)
+  const person = getEmployee(currentUserId)
 
   function switchRole(next: Role) {
     setRole(next)
