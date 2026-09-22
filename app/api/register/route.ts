@@ -44,21 +44,23 @@ export async function POST(req: NextRequest) {
       monthlySalary: Number(monthlySalary) || undefined,
     }
 
-    // 2. Register employee in Supabase / Server DB
-    const employee = await registerNewEmployee(input)
+    // 2. Submit employee registration request (pending HR/Manager approval)
+    const regRequest = await registerNewEmployee(input)
 
     return NextResponse.json(
       {
         success: true,
-        message: "Employee registered successfully",
-        employee: {
-          id: employee.id,
-          name: employee.name,
-          email: employee.email,
-          role: employee.baseRole,
-          department: employee.department,
-          designation: employee.designation,
-          managerId: employee.managerId,
+        pendingApproval: true,
+        message: "Registration submitted successfully. Awaiting approval from HR or your Reporting Manager.",
+        request: {
+          id: regRequest.id,
+          name: regRequest.name,
+          email: regRequest.email,
+          role: regRequest.role,
+          department: regRequest.department,
+          designation: regRequest.designation,
+          status: regRequest.status,
+          submittedAt: regRequest.submittedAt,
         },
       },
       { status: 201 },

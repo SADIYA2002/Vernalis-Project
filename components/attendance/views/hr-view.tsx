@@ -32,8 +32,11 @@ import { useStore } from "../store"
 import { Avatar, Card, CardHeader, PageHeading, StatTile, StateBadge, StatusBadge } from "../ui"
 import { CalendarLegend, MonthCalendar } from "../calendar"
 
+import { RegistrationsView } from "./registrations-view"
+
 export function HrView({ section }: { section: string }) {
   if (section === "analytics") return <Analytics />
+  if (section === "registrations") return <RegistrationsView />
   if (section === "register") return <Register />
   if (section === "leave") return <LeaveAdmin />
   if (section === "policy") return <PolicyView />

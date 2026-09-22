@@ -12,6 +12,7 @@ import {
   PlaneTakeoff,
   ScrollText,
   Users,
+  UserCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getPerson, type Role } from "@/lib/attendance-data"
@@ -22,7 +23,7 @@ import { ManagerView } from "./views/manager-view"
 import { HrView } from "./views/hr-view"
 import { PayrollView } from "./views/payroll-view"
 
-type NavItem = { id: string; label: string; icon: typeof Gauge; badge?: "corrections" | "leaves" | "both" }
+type NavItem = { id: string; label: string; icon: typeof Gauge; badge?: "corrections" | "leaves" | "both" | "registrations" }
 
 const NAV: Record<Role, NavItem[]> = {
   employee: [
@@ -35,10 +36,12 @@ const NAV: Record<Role, NavItem[]> = {
   manager: [
     { id: "overview", label: "Team Overview", icon: LayoutGrid },
     { id: "approvals", label: "Approvals", icon: ListChecks, badge: "both" },
+    { id: "registrations", label: "New Joinees", icon: UserCheck, badge: "registrations" },
     { id: "team", label: "Team Timesheet", icon: Users },
   ],
   hr: [
     { id: "analytics", label: "Analytics", icon: Gauge },
+    { id: "registrations", label: "Registrations", icon: UserCheck, badge: "registrations" },
     { id: "register", label: "Attendance Register", icon: CalendarDays },
     { id: "leave", label: "Leave Admin", icon: PlaneTakeoff },
     { id: "policy", label: "Policy & Legal", icon: ScrollText },
@@ -68,6 +71,7 @@ export function RoleWorkspace({ role }: { role: Role }) {
     if (item.badge === "corrections") return pending.corrections
     if (item.badge === "leaves") return pending.leaves
     if (item.badge === "both") return pending.corrections + pending.leaves
+    if (item.badge === "registrations") return pending.registrations
     return 0
   }
 

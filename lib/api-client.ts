@@ -34,6 +34,7 @@ export interface BootstrapResponse {
   corrections: CorrectionRequest[]
   leaves: LeaveRequest[]
   balances: LeaveBalance[]
+  registrationRequests?: any[]
   backend?: "supabase" | "memory"
   lastUpdated: string
 }

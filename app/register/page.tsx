@@ -17,6 +17,7 @@ import {
   ArrowRight,
   Loader2,
   CheckCircle2,
+  Clock,
 } from "lucide-react"
 import type { Role } from "@/lib/attendance-data"
 
@@ -98,36 +99,63 @@ function RegisterForm() {
       }
 
       setSuccess(true)
-
-      // 2. Automatically sign in with NextAuth
-      const loginRes = await signIn("credentials", {
-        redirect: false,
-        email: email.trim().toLowerCase(),
-        password: password || "password123",
-        callbackUrl,
-      })
-
-      if (loginRes?.error) {
-        // If auto-login fails, redirect to login page with pre-filled email
-        router.push(`/login?email=${encodeURIComponent(email)}&registered=1`)
-      } else {
-        // Redirect to role portal
-        const targetPortal =
-          role === "employee"
-            ? "/portal/employee"
-            : role === "manager"
-              ? "/portal/manager"
-              : role === "hr"
-                ? "/portal/hr"
-                : "/portal/payroll"
-
-        router.push(targetPortal)
-        router.refresh()
-      }
+      setLoading(false)
     } catch (err: any) {
       setError(err?.message || "An unexpected error occurred.")
       setLoading(false)
     }
+  }
+
+  if (success) {
+    return (
+      <div className="flex min-h-screen flex-col justify-center bg-muted/30 px-4 py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-xl sm:p-8">
+            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Clock className="size-8" />
+            </div>
+            <h3 className="mt-4 text-xl font-bold text-foreground">
+              Registration Submitted
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+              Thank you, <strong className="text-foreground">{name}</strong>! Your registration request for the role of{" "}
+              <strong className="text-foreground capitalize">{role}</strong> in{" "}
+              <strong className="text-foreground">{department}</strong> has been submitted.
+            </p>
+
+            <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-left text-xs space-y-2">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Work Email:</span>
+                <span className="font-semibold text-foreground">{email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Designation:</span>
+                <span className="font-semibold text-foreground">{designation}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Status:</span>
+                <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 font-bold uppercase text-[10px] text-amber-700 dark:text-amber-300">
+                  <Clock className="size-3" /> Pending Approval
+                </span>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs text-muted-foreground">
+              An HR Administrator (Meera Joshi) or your designated manager will review and approve your registration. Once approved, you can sign in with your credentials.
+            </p>
+
+            <div className="mt-6">
+              <Link
+                href="/login"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow transition hover:opacity-90"
+              >
+                Return to Sign In <ArrowRight className="size-4" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -14,11 +14,14 @@ import {
 import { useStore } from "../store"
 import { Avatar, Card, CardHeader, EmptyState, PageHeading, StatTile, StatusBadge, inputCls } from "../ui"
 
+import { RegistrationsView } from "./registrations-view"
+
 export function ManagerView({ section }: { section: string }) {
   const { currentUserId } = useStore()
   const reports = useMemo(() => directReports(currentUserId), [currentUserId])
   if (section === "overview") return <Overview reports={reports} />
   if (section === "approvals") return <Approvals reports={reports} />
+  if (section === "registrations") return <RegistrationsView />
   if (section === "team") return <TeamTimesheet reports={reports} />
   return null
 }

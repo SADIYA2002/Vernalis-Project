@@ -74,6 +74,21 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!person) {
+          const { getRegistrationRequests } = await import("@/lib/server/attendance-db")
+          try {
+            const regRequests = await getRegistrationRequests()
+            const req = regRequests.find((r) => r.email.toLowerCase() === email)
+            if (req && req.status === "pending") {
+              throw new Error("PENDING_APPROVAL: Your registration is currently awaiting HR / Manager review.")
+            }
+            if (req && req.status === "rejected") {
+              throw new Error("REJECTED: Your registration request was rejected by an administrator.")
+            }
+          } catch (err: any) {
+            if (err?.message?.startsWith("PENDING_APPROVAL") || err?.message?.startsWith("REJECTED")) {
+              throw err
+            }
+          }
           return null
         }
 

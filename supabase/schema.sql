@@ -97,6 +97,25 @@ CREATE TABLE IF NOT EXISTS payroll_locks (
   PRIMARY KEY (period_start, period_end)
 );
 
+-- 7. Registration Requests Table (Pending HR / Manager Approval)
+CREATE TABLE IF NOT EXISTS registration_requests (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('employee', 'manager', 'hr', 'payroll')),
+  department TEXT NOT NULL,
+  designation TEXT NOT NULL,
+  manager_id TEXT REFERENCES employees(id) ON DELETE SET NULL,
+  monthly_salary NUMERIC NOT NULL DEFAULT 110000,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_by TEXT REFERENCES employees(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_registrations_status ON registration_requests(status);
+CREATE INDEX IF NOT EXISTS idx_registrations_manager ON registration_requests(manager_id);
+
 -- ===========================================================================
 -- SEED DATA: EMPLOYEES & INITIAL DEMO SETUP
 -- ===========================================================================

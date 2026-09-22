@@ -32,6 +32,21 @@ export interface Toast {
   tone: "success" | "info" | "warn"
 }
 
+export interface RegistrationRequest {
+  id: string
+  name: string
+  email: string
+  role: Role
+  department: string
+  designation: string
+  managerId: string | null
+  monthlySalary?: number
+  status: "pending" | "approved" | "rejected"
+  submittedAt: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+}
+
 export interface StoreValue {
   role: Role
   setRole: (r: Role) => void
@@ -42,6 +57,7 @@ export interface StoreValue {
   corrections: CorrectionRequest[]
   leaves: LeaveRequest[]
   balances: LeaveBalance[]
+  registrationRequests: RegistrationRequest[]
 
   toasts: Toast[]
   dismissToast: (id: number) => void
@@ -82,6 +98,9 @@ export interface StoreValue {
   }) => Promise<void>
 
   reviewLeave: (id: string, approve: boolean, reviewerId: string, comment: string) => Promise<void>
+
+  approveRegistration: (id: string) => Promise<void>
+  rejectRegistration: (id: string) => Promise<void>
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
@@ -118,6 +137,7 @@ export function StoreProvider({
   const [corrections, setCorrections] = useState<CorrectionRequest[]>(seed.corrections)
   const [leaves, setLeaves] = useState<LeaveRequest[]>(seed.leaves)
   const [balances, setBalances] = useState<LeaveBalance[]>(seed.balances)
+  const [registrationRequests, setRegistrationRequests] = useState<RegistrationRequest[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
   const [backend, setBackend] = useState<"supabase" | "memory">("memory")
   const [isLoaded, setIsLoaded] = useState(false)
@@ -151,6 +171,9 @@ export function StoreProvider({
           setCorrections(bootstrap.corrections)
           setLeaves(bootstrap.leaves)
           setBalances(bootstrap.balances)
+          if (bootstrap.registrationRequests) {
+            setRegistrationRequests(bootstrap.registrationRequests)
+          }
           if (bootstrap.backend) {
             setBackend(bootstrap.backend)
           }
@@ -543,6 +566,47 @@ export function StoreProvider({
         })
       }
     },
+
+    registrationRequests,
+    approveRegistration: async (id: string) => {
+      try {
+        const res = await fetch(`/api/registrations/${id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "approve" }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to approve registration")
+        }
+        setRegistrationRequests((prev) =>
+          prev.map((r) => (r.id === id ? { ...r, status: "approved" as const } : r)),
+        )
+        pushToast("Registration Approved", data.message, "success")
+      } catch (err: any) {
+        pushToast("Approval Failed", err?.message, "warn")
+      }
+    },
+
+    rejectRegistration: async (id: string) => {
+      try {
+        const res = await fetch(`/api/registrations/${id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reject" }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to reject registration")
+        }
+        setRegistrationRequests((prev) =>
+          prev.map((r) => (r.id === id ? { ...r, status: "rejected" as const } : r)),
+        )
+        pushToast("Registration Rejected", data.message, "info")
+      } catch (err: any) {
+        pushToast("Rejection Failed", err?.message, "warn")
+      }
+    },
   }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
@@ -555,12 +619,13 @@ export function useStore() {
 }
 
 export function usePendingCounts() {
-  const { corrections, leaves } = useStore()
+  const { corrections, leaves, registrationRequests } = useStore()
   return useMemo(
     () => ({
       corrections: corrections.filter((c) => c.state === "pending").length,
       leaves: leaves.filter((l) => l.state === "pending").length,
+      registrations: (registrationRequests || []).filter((r) => r.status === "pending").length,
     }),
-    [corrections, leaves],
+    [corrections, leaves, registrationRequests],
   )
 }

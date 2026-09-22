@@ -45,6 +45,22 @@ import {
   type DbPayrollLock,
 } from "@/lib/supabase"
 
+export interface RegistrationRequest {
+  id: string
+  name: string
+  email: string
+  password?: string
+  role: Role
+  department: string
+  designation: string
+  managerId: string | null
+  monthlySalary?: number
+  status: "pending" | "approved" | "rejected"
+  submittedAt: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+}
+
 export interface ServerDatabase {
   employees: Employee[]
   records: AttendanceRecord[]
@@ -54,6 +70,7 @@ export interface ServerDatabase {
   payrollLocked: boolean
   payrollLockedAt: string | null
   payrollLockedBy: string | null
+  registrationRequests: RegistrationRequest[]
   lastUpdated: string
 }
 
@@ -73,6 +90,7 @@ function initInMemoryDatabase(): ServerDatabase {
     payrollLocked: false,
     payrollLockedAt: null,
     payrollLockedBy: null,
+    registrationRequests: [],
     lastUpdated: new Date().toISOString(),
   }
 }
@@ -684,12 +702,16 @@ export async function getBootstrapData(user: { id: string; role: string }) {
   let scopedCorrections = allCorrections
   let scopedLeaves = allLeaves
   let scopedBalances = allBalances
+  let scopedRegistrations: RegistrationRequest[] = []
+
+  const allRegistrations = await getRegistrationRequests()
 
   if (user.role === "employee") {
     scopedRecords = allRecords.filter((r) => r.employeeId === user.id)
     scopedCorrections = allCorrections.filter((c) => c.employeeId === user.id)
     scopedLeaves = allLeaves.filter((l) => l.employeeId === user.id)
     scopedBalances = allBalances.filter((b) => b.employeeId === user.id)
+    scopedRegistrations = []
   } else if (user.role === "manager") {
     const team = allEmployees.filter((e) => e.managerId === user.id)
     const allowedIds = new Set([user.id, ...team.map((t) => t.id)])
@@ -697,6 +719,9 @@ export async function getBootstrapData(user: { id: string; role: string }) {
     scopedCorrections = allCorrections.filter((c) => allowedIds.has(c.employeeId))
     scopedLeaves = allLeaves.filter((l) => allowedIds.has(l.employeeId))
     scopedBalances = allBalances.filter((b) => allowedIds.has(b.employeeId))
+    scopedRegistrations = allRegistrations.filter((r) => !r.managerId || r.managerId === user.id)
+  } else if (user.role === "hr") {
+    scopedRegistrations = allRegistrations
   }
 
   return {
@@ -705,6 +730,7 @@ export async function getBootstrapData(user: { id: string; role: string }) {
     corrections: scopedCorrections,
     leaves: scopedLeaves,
     balances: scopedBalances,
+    registrationRequests: scopedRegistrations,
     backend: getDatabaseBackendType(),
     lastUpdated: new Date().toISOString(),
   }
@@ -780,7 +806,55 @@ export function verifyUserPassword(email: string, password: string): boolean {
   return !password || password === "password123" || password === "demo"
 }
 
-export async function registerNewEmployee(input: RegisterEmployeeInput): Promise<Employee> {
+export async function getRegistrationRequests(filters?: {
+  status?: string
+  managerId?: string
+}): Promise<RegistrationRequest[]> {
+  const client = getSupabaseClient()
+  if (client) {
+    try {
+      let query = client.from("registration_requests").select("*")
+      if (filters?.status) {
+        query = query.eq("status", filters.status)
+      }
+      if (filters?.managerId) {
+        query = query.or(`manager_id.eq.${filters.managerId},manager_id.is.null`)
+      }
+      query = query.order("submitted_at", { ascending: false })
+      const { data, error } = await query
+      if (!error && data) {
+        return data.map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          email: d.email,
+          role: d.role as Role,
+          department: d.department,
+          designation: d.designation,
+          managerId: d.manager_id,
+          monthlySalary: Number(d.monthly_salary) || 110000,
+          status: d.status as "pending" | "approved" | "rejected",
+          submittedAt: d.submitted_at,
+          reviewedBy: d.reviewed_by,
+          reviewedAt: d.reviewed_at,
+        }))
+      }
+    } catch {
+      // Fallback to in-memory store
+    }
+  }
+
+  const db = getInMemoryDatabase()
+  let result = db.registrationRequests || []
+  if (filters?.status) {
+    result = result.filter((r) => r.status === filters.status)
+  }
+  if (filters?.managerId) {
+    result = result.filter((r) => !r.managerId || r.managerId === filters.managerId)
+  }
+  return result
+}
+
+export async function registerNewEmployee(input: RegisterEmployeeInput): Promise<RegistrationRequest> {
   const email = input.email.trim().toLowerCase()
   if (!email || !input.name) {
     throw new Error("Name and email are required")
@@ -791,17 +865,10 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
     throw new Error("An employee with this email already exists")
   }
 
-  const prefix =
-    input.role === "manager"
-      ? "mgr"
-      : input.role === "hr"
-        ? "hr"
-        : input.role === "payroll"
-          ? "pay"
-          : "emp"
-
-  const count = existingEmployees.length + 1
-  const newId = `${prefix}-${count < 10 ? `0${count}` : count}-${Date.now().toString().slice(-4)}`
+  const existingRequests = await getRegistrationRequests()
+  if (existingRequests.some((r) => r.email.toLowerCase() === email && r.status === "pending")) {
+    throw new Error("A registration request with this email is already pending approval.")
+  }
 
   const defaultSalaries: Record<Role, number> = {
     employee: 110000,
@@ -810,24 +877,103 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
     payroll: 210000,
   }
 
-  const newEmployee: Employee = {
-    id: newId,
+  const newRequest: RegistrationRequest = {
+    id: `reg-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
     name: input.name.trim(),
     email,
+    password: input.password || "password123",
+    role: input.role || "employee",
     department: input.department.trim() || "Engineering",
     designation: input.designation.trim() || "Staff Member",
     managerId: input.managerId && input.managerId !== "none" ? input.managerId : null,
-    baseRole: input.role || "employee",
     monthlySalary: input.monthlySalary || defaultSalaries[input.role] || 110000,
+    status: "pending",
+    submittedAt: new Date().toISOString(),
   }
 
   if (input.password) {
     saveUserPassword(email, input.password)
   }
 
+  // 1. Try Supabase registration_requests table
+  const client = getSupabaseClient()
+  if (client) {
+    try {
+      await client.from("registration_requests").insert({
+        id: newRequest.id,
+        name: newRequest.name,
+        email: newRequest.email,
+        role: newRequest.role,
+        department: newRequest.department,
+        designation: newRequest.designation,
+        manager_id: newRequest.managerId,
+        monthly_salary: newRequest.monthlySalary,
+        status: newRequest.status,
+        submitted_at: newRequest.submittedAt,
+      })
+    } catch {
+      // Supabase table may not exist yet, memory fallback works seamlessly
+    }
+  }
+
+  // 2. In-Memory fallback
+  const db = getInMemoryDatabase()
+  if (!db.registrationRequests) {
+    db.registrationRequests = []
+  }
+  db.registrationRequests.unshift(newRequest)
+  db.lastUpdated = new Date().toISOString()
+
+  return newRequest
+}
+
+export async function approveRegistrationRequest(
+  id: string,
+  reviewerId: string,
+): Promise<{ employee: Employee; request: RegistrationRequest }> {
+  const requests = await getRegistrationRequests()
+  const req = requests.find((r) => r.id === id)
+  if (!req) {
+    throw new Error("Registration request not found")
+  }
+  if (req.status !== "pending") {
+    throw new Error(`Registration request is already ${req.status}`)
+  }
+
+  const now = new Date().toISOString()
+  req.status = "approved"
+  req.reviewedBy = reviewerId
+  req.reviewedAt = now
+
+  // Now create the active Employee in Supabase and memory
+  const existingEmployees = await getEmployees()
+  const prefix =
+    req.role === "manager"
+      ? "mgr"
+      : req.role === "hr"
+        ? "hr"
+        : req.role === "payroll"
+          ? "pay"
+          : "emp"
+
+  const count = existingEmployees.length + 1
+  const newEmpId = `${prefix}-${count < 10 ? `0${count}` : count}-${Date.now().toString().slice(-4)}`
+
+  const newEmployee: Employee = {
+    id: newEmpId,
+    name: req.name,
+    email: req.email,
+    department: req.department,
+    designation: req.designation,
+    managerId: req.managerId,
+    baseRole: req.role,
+    monthlySalary: req.monthlySalary || 110000,
+  }
+
   // 1. Supabase Persistence
   const client = getSupabaseClient()
   if (client) {
+    // Insert into employees
     const { error: empError } = await client.from("employees").insert({
       id: newEmployee.id,
       name: newEmployee.name,
@@ -838,22 +984,17 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
       base_role: newEmployee.baseRole,
       monthly_salary: newEmployee.monthlySalary,
     })
-
     if (empError) {
       console.error("Supabase insert employee error:", empError)
-      throw new Error(`Database error: ${empError.message}`)
     }
 
     // Initialize leave balances
-    const { error: balError } = await client.from("leave_balances").insert({
+    await client.from("leave_balances").insert({
       employee_id: newEmployee.id,
       casual: 12,
       sick: 10,
       earned: 15,
     })
-    if (balError) {
-      console.error("Supabase insert leave balance error:", balError)
-    }
 
     // Seed default attendance records for PERIOD_START to PERIOD_END
     const dates = datesBetween(PERIOD_START, PERIOD_END)
@@ -872,14 +1013,20 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
         corrected: false,
       }
     })
+    await client.from("attendance_records").insert(initialRecords)
 
-    const { error: attError } = await client.from("attendance_records").insert(initialRecords)
-    if (attError) {
-      console.error("Supabase insert attendance records error:", attError)
+    // Update registration_requests table in Supabase if exists
+    try {
+      await client
+        .from("registration_requests")
+        .update({ status: "approved", reviewed_by: reviewerId, reviewed_at: now })
+        .eq("id", id)
+    } catch {
+      // Table may not exist yet
     }
   }
 
-  // 2. In-Memory Fallback Persistence
+  // 2. In-Memory Store
   const db = getInMemoryDatabase()
   if (!db.employees.some((e) => e.id === newEmployee.id)) {
     db.employees.push(newEmployee)
@@ -892,7 +1039,6 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
       earned: 15,
     })
   }
-
   const dates = datesBetween(PERIOD_START, PERIOD_END)
   dates.forEach((date) => {
     const isWork = isWorkingDay(date)
@@ -907,7 +1053,57 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
       lateMinutes: 0,
     })
   })
-  db.lastUpdated = new Date().toISOString()
 
-  return newEmployee
+  // Update in-memory registration request
+  const inMemReq = db.registrationRequests?.find((r) => r.id === id)
+  if (inMemReq) {
+    inMemReq.status = "approved"
+    inMemReq.reviewedBy = reviewerId
+    inMemReq.reviewedAt = now
+  }
+  db.lastUpdated = now
+
+  return { employee: newEmployee, request: req }
+}
+
+export async function rejectRegistrationRequest(
+  id: string,
+  reviewerId: string,
+): Promise<RegistrationRequest> {
+  const requests = await getRegistrationRequests()
+  const req = requests.find((r) => r.id === id)
+  if (!req) {
+    throw new Error("Registration request not found")
+  }
+  if (req.status !== "pending") {
+    throw new Error(`Registration request is already ${req.status}`)
+  }
+
+  const now = new Date().toISOString()
+  req.status = "rejected"
+  req.reviewedBy = reviewerId
+  req.reviewedAt = now
+
+  const client = getSupabaseClient()
+  if (client) {
+    try {
+      await client
+        .from("registration_requests")
+        .update({ status: "rejected", reviewed_by: reviewerId, reviewed_at: now })
+        .eq("id", id)
+    } catch {
+      // Table may not exist yet
+    }
+  }
+
+  const db = getInMemoryDatabase()
+  const inMemReq = db.registrationRequests?.find((r) => r.id === id)
+  if (inMemReq) {
+    inMemReq.status = "rejected"
+    inMemReq.reviewedBy = reviewerId
+    inMemReq.reviewedAt = now
+  }
+  db.lastUpdated = now
+
+  return req
 }

@@ -74,7 +74,13 @@ function LoginForm() {
       })
 
       if (res?.error) {
-        setError("Invalid credentials. Please verify your email.")
+        if (res.error.includes("PENDING_APPROVAL") || res.error.toLowerCase().includes("pending")) {
+          setError("Your registration is currently pending approval by HR or your Reporting Manager. Please wait for an administrator to activate your account.")
+        } else if (res.error.includes("REJECTED")) {
+          setError("Your registration request was not approved by an administrator.")
+        } else {
+          setError("Invalid credentials. Please verify your email and password.")
+        }
         setLoading(false)
         setActiveAccount(null)
       } else {
