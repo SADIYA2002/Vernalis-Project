@@ -2,6 +2,9 @@
 // Chrono Attendance Portal — Server Database Repository (Supabase + Memory Fallback)
 // ---------------------------------------------------------------------------
 
+import fs from "fs"
+import path from "path"
+
 import {
   type AttendanceRecord,
   type AttendanceStatus,
@@ -127,10 +130,15 @@ export async function getEmployees(): Promise<Employee[]> {
   if (client) {
     const { data, error } = await client.from("employees").select("*").order("id")
     if (!error && data && data.length > 0) {
-      return (data as DbEmployee[]).map(mapDbEmployee)
+      const activeOnly = (data as DbEmployee[]).filter(
+        (e) => !e.id.startsWith("reg-") && !e.designation?.startsWith("[PENDING]") && !e.designation?.startsWith("[REJECTED]")
+      )
+      return activeOnly.map(mapDbEmployee)
     }
   }
-  return getInMemoryDatabase().employees
+  return getInMemoryDatabase().employees.filter(
+    (e) => !e.id.startsWith("reg-") && !e.designation?.startsWith("[PENDING]") && !e.designation?.startsWith("[REJECTED]")
+  )
 }
 
 // --- Attendance Operations ---
@@ -781,6 +789,34 @@ export interface RegisterEmployeeInput {
   monthlySalary?: number
 }
 
+const PASSWORDS_FILE = path.join(process.cwd(), ".data", "user_passwords.json")
+
+function loadPersistentPasswords(): Record<string, string> {
+  try {
+    if (fs.existsSync(PASSWORDS_FILE)) {
+      const data = fs.readFileSync(PASSWORDS_FILE, "utf-8")
+      return JSON.parse(data)
+    }
+  } catch {
+    // Ignore read errors
+  }
+  return {}
+}
+
+function savePersistentPassword(email: string, pass: string) {
+  try {
+    const dir = path.dirname(PASSWORDS_FILE)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    const current = loadPersistentPasswords()
+    current[email.toLowerCase().trim()] = pass
+    fs.writeFileSync(PASSWORDS_FILE, JSON.stringify(current, null, 2), "utf-8")
+  } catch {
+    // Ignore write errors
+  }
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var __chrono_user_passwords: Map<string, string> | undefined
@@ -794,14 +830,20 @@ function getUserPasswordsMap(): Map<string, string> {
 }
 
 export function saveUserPassword(email: string, password: string) {
-  getUserPasswordsMap().set(email.toLowerCase().trim(), password)
+  const cleanEmail = email.toLowerCase().trim()
+  getUserPasswordsMap().set(cleanEmail, password)
+  savePersistentPassword(cleanEmail, password)
 }
 
 export function verifyUserPassword(email: string, password: string): boolean {
   const cleanEmail = email.toLowerCase().trim()
-  const stored = getUserPasswordsMap().get(cleanEmail)
-  if (stored) {
-    return stored === password || password === "password123" || password === "demo"
+  const inMem = getUserPasswordsMap().get(cleanEmail)
+  if (inMem) {
+    return inMem === password || password === "password123" || password === "demo"
+  }
+  const persistent = loadPersistentPasswords()[cleanEmail]
+  if (persistent) {
+    return persistent === password || password === "password123" || password === "demo"
   }
   return !password || password === "password123" || password === "demo"
 }
@@ -812,6 +854,7 @@ export async function getRegistrationRequests(filters?: {
 }): Promise<RegistrationRequest[]> {
   const client = getSupabaseClient()
   if (client) {
+    // 1. Try dedicated registration_requests table in Supabase
     try {
       let query = client.from("registration_requests").select("*")
       if (filters?.status) {
@@ -822,7 +865,7 @@ export async function getRegistrationRequests(filters?: {
       }
       query = query.order("submitted_at", { ascending: false })
       const { data, error } = await query
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         return data.map((d: any) => ({
           id: d.id,
           name: d.name,
@@ -839,10 +882,53 @@ export async function getRegistrationRequests(filters?: {
         }))
       }
     } catch {
-      // Fallback to in-memory store
+      // Table may not exist yet, proceed to check employees table
+    }
+
+    // 2. Also check Supabase employees table for candidates with [PENDING] or [REJECTED]
+    try {
+      const { data: empData, error: empErr } = await client
+        .from("employees")
+        .select("*")
+        .or("id.like.reg-%,designation.ilike.[PENDING]%,designation.ilike.[REJECTED]%")
+        .order("created_at", { ascending: false })
+
+      if (!empErr && empData && empData.length > 0) {
+        const fromEmps: RegistrationRequest[] = empData.map((d: any) => {
+          const isPending = d.designation?.includes("[PENDING]") || d.id?.startsWith("reg-")
+          const isRejected = d.designation?.includes("[REJECTED]")
+          const cleanDesignation = (d.designation || "").replace(/\[PENDING\]\s*/i, "").replace(/\[REJECTED\]\s*/i, "")
+          return {
+            id: d.id,
+            name: d.name,
+            email: d.email,
+            role: d.base_role as Role,
+            department: d.department,
+            designation: cleanDesignation,
+            managerId: d.manager_id,
+            monthlySalary: Number(d.monthly_salary) || 110000,
+            status: isRejected ? "rejected" : "pending",
+            submittedAt: d.created_at,
+          }
+        })
+
+        let result = fromEmps
+        if (filters?.status) {
+          result = result.filter((r) => r.status === filters.status)
+        }
+        if (filters?.managerId) {
+          result = result.filter((r) => !r.managerId || r.managerId === filters.managerId)
+        }
+        if (result.length > 0) {
+          return result
+        }
+      }
+    } catch {
+      // Ignore
     }
   }
 
+  // 3. Fallback to in-memory store
   const db = getInMemoryDatabase()
   let result = db.registrationRequests || []
   if (filters?.status) {
@@ -895,9 +981,10 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
     saveUserPassword(email, input.password)
   }
 
-  // 1. Try Supabase registration_requests table
+  // 1. Try Supabase persistence
   const client = getSupabaseClient()
   if (client) {
+    // (a) Attempt dedicated registration_requests table
     try {
       await client.from("registration_requests").insert({
         id: newRequest.id,
@@ -912,7 +999,25 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
         submitted_at: newRequest.submittedAt,
       })
     } catch {
-      // Supabase table may not exist yet, memory fallback works seamlessly
+      // Table may not exist yet
+    }
+
+    // (b) ALWAYS ALSO persist into Supabase employees table with [PENDING] designation
+    // This guarantees immediate visibility and persistence in Supabase
+    try {
+      await client.from("employees").upsert({
+        id: newRequest.id,
+        name: newRequest.name,
+        email: newRequest.email,
+        department: newRequest.department,
+        designation: `[PENDING] ${newRequest.designation}`,
+        manager_id: newRequest.managerId,
+        base_role: newRequest.role,
+        monthly_salary: newRequest.monthlySalary,
+        created_at: newRequest.submittedAt,
+      }, { onConflict: "email" })
+    } catch (err) {
+      console.error("[Supabase] Failed to write pending candidate to employees table:", err)
     }
   }
 
@@ -945,7 +1050,7 @@ export async function approveRegistrationRequest(
   req.reviewedBy = reviewerId
   req.reviewedAt = now
 
-  // Now create the active Employee in Supabase and memory
+  // Create official employee ID
   const existingEmployees = await getEmployees()
   const prefix =
     req.role === "manager"
@@ -973,8 +1078,13 @@ export async function approveRegistrationRequest(
   // 1. Supabase Persistence
   const client = getSupabaseClient()
   if (client) {
-    // Insert into employees
-    const { error: empError } = await client.from("employees").insert({
+    // If pending row was stored with reg- ID, remove it so clean emp- ID takes over
+    if (id.startsWith("reg-")) {
+      await client.from("employees").delete().eq("id", id)
+    }
+
+    // Insert active employee in Supabase employees table
+    const { error: empError } = await client.from("employees").upsert({
       id: newEmployee.id,
       name: newEmployee.name,
       email: newEmployee.email,
@@ -983,20 +1093,23 @@ export async function approveRegistrationRequest(
       manager_id: newEmployee.managerId,
       base_role: newEmployee.baseRole,
       monthly_salary: newEmployee.monthlySalary,
-    })
+      created_at: now,
+    }, { onConflict: "email" })
+
     if (empError) {
       console.error("Supabase insert employee error:", empError)
     }
 
-    // Initialize leave balances
-    await client.from("leave_balances").insert({
+    // Initialize leave balances in Supabase
+    await client.from("leave_balances").upsert({
       employee_id: newEmployee.id,
       casual: 12,
       sick: 10,
       earned: 15,
-    })
+      updated_at: now,
+    }, { onConflict: "employee_id" })
 
-    // Seed default attendance records for PERIOD_START to PERIOD_END
+    // Seed default attendance records in Supabase
     const dates = datesBetween(PERIOD_START, PERIOD_END)
     const initialRecords: DbAttendanceRecord[] = dates.map((date) => {
       const isWork = isWorkingDay(date)
@@ -1013,7 +1126,7 @@ export async function approveRegistrationRequest(
         corrected: false,
       }
     })
-    await client.from("attendance_records").insert(initialRecords)
+    await client.from("attendance_records").upsert(initialRecords, { onConflict: "employee_id,date" })
 
     // Update registration_requests table in Supabase if exists
     try {
@@ -1093,6 +1206,15 @@ export async function rejectRegistrationRequest(
         .eq("id", id)
     } catch {
       // Table may not exist yet
+    }
+
+    try {
+      await client
+        .from("employees")
+        .update({ designation: `[REJECTED] ${req.designation}` })
+        .eq("email", req.email)
+    } catch {
+      // Ignore
     }
   }
 

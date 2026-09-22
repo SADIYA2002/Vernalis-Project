@@ -92,10 +92,32 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
+        // Check if candidate account is still pending approval or rejected
+        if (person.id.startsWith("reg-") || person.designation?.includes("[PENDING]")) {
+          throw new Error("PENDING_APPROVAL: Your registration is currently awaiting HR / Manager review.")
+        }
+        if (person.designation?.includes("[REJECTED]")) {
+          throw new Error("REJECTED: Your registration request was rejected by an administrator.")
+        }
+
         // Verify password
         const password = credentials.password || ""
         if (!verifyUserPassword(email, password)) {
           return null
+        }
+
+        // Update sign-in timestamp directly in Supabase employees table
+        try {
+          const { getSupabaseClient } = await import("@/lib/supabase")
+          const supabase = getSupabaseClient()
+          if (supabase) {
+            await supabase
+              .from("employees")
+              .update({ created_at: new Date().toISOString() })
+              .eq("id", person.id)
+          }
+        } catch {
+          // Ignore timestamp update error if offline
         }
 
         return {
