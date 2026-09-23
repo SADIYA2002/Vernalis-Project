@@ -54,6 +54,11 @@ export interface ReviewLeaveResponse {
   updatedBalances: LeaveBalance[]
 }
 
+export type SubmitLeaveResponse = LeaveRequest & {
+  updatedRecords?: AttendanceRecord[]
+  updatedBalances?: LeaveBalance[]
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: {
@@ -159,8 +164,8 @@ export const apiClient = {
     from: string
     to: string
     reason: string
-  }): Promise<LeaveRequest> {
-    return request<LeaveRequest>("/api/leaves", {
+  }): Promise<SubmitLeaveResponse> {
+    return request<SubmitLeaveResponse>("/api/leaves", {
       method: "POST",
       body: JSON.stringify(input),
     })

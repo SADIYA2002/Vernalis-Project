@@ -14,6 +14,7 @@ import {
   type LeaveRequest,
   type LeaveType,
   type PayrollRow,
+  type RequestState,
   type Role,
   ALL_PEOPLE,
   MARKING_STAFF,
@@ -232,6 +233,18 @@ export async function upsertAttendance(input: {
 
 // --- Corrections Operations ---
 
+function autoApproveHrItem<T extends { employeeId: string; state: RequestState; reviewedBy?: string; reviewComment?: string }>(item: T): T {
+  if (item.state === "pending" && (item.employeeId.startsWith("hr-") || item.employeeId === "hr-01")) {
+    return {
+      ...item,
+      state: "approved",
+      reviewedBy: item.reviewedBy || item.employeeId,
+      reviewComment: item.reviewComment || "Auto-approved for HR",
+    }
+  }
+  return item
+}
+
 export async function getCorrections(filters?: {
   employeeId?: string
   state?: string
@@ -248,12 +261,16 @@ export async function getCorrections(filters?: {
     query = query.order("submitted_at", { ascending: false })
     const { data, error } = await query
     if (!error && data) {
-      return (data as DbCorrectionRequest[]).map(mapDbCorrection)
+      const list = (data as DbCorrectionRequest[]).map(mapDbCorrection).map(autoApproveHrItem)
+      if (filters?.state) {
+        return list.filter((c) => c.state === filters.state)
+      }
+      return list
     }
   }
 
   const db = getInMemoryDatabase()
-  let result = db.corrections
+  let result = db.corrections.map(autoApproveHrItem)
   if (filters?.employeeId) {
     result = result.filter((c) => c.employeeId === filters.employeeId)
   }
@@ -412,12 +429,16 @@ export async function getLeaveRequests(filters?: {
     query = query.order("submitted_at", { ascending: false })
     const { data, error } = await query
     if (!error && data) {
-      return (data as DbLeaveRequest[]).map(mapDbLeave)
+      const list = (data as DbLeaveRequest[]).map(mapDbLeave).map(autoApproveHrItem)
+      if (filters?.state) {
+        return list.filter((l) => l.state === filters.state)
+      }
+      return list
     }
   }
 
   const db = getInMemoryDatabase()
-  let result = db.leaves
+  let result = db.leaves.map(autoApproveHrItem)
   if (filters?.employeeId) {
     result = result.filter((l) => l.employeeId === filters.employeeId)
   }
@@ -433,8 +454,18 @@ export async function createLeaveRequest(input: {
   from: string
   to: string
   reason: string
-}): Promise<LeaveRequest> {
+  autoApprove?: boolean
+  reviewerId?: string
+}): Promise<{
+  leave: LeaveRequest
+  updatedRecords?: AttendanceRecord[]
+  updatedBalances?: LeaveBalance[]
+}> {
   const days = datesBetween(input.from, input.to).filter(isWorkingDay).length
+  const isAuto = Boolean(input.autoApprove)
+  const now = new Date().toISOString()
+  const reviewer = input.reviewerId || (isAuto ? input.employeeId : undefined)
+
   const newLeave: LeaveRequest = {
     id: `lv-${Date.now()}`,
     employeeId: input.employeeId,
@@ -443,24 +474,89 @@ export async function createLeaveRequest(input: {
     to: input.to,
     days,
     reason: input.reason,
-    state: "pending",
-    submittedAt: new Date().toISOString(),
+    state: isAuto ? "approved" : "pending",
+    submittedAt: now,
+    reviewedBy: isAuto ? reviewer : undefined,
+    reviewComment: isAuto ? "Auto-approved for HR" : undefined,
   }
+
+  const updatedRecords: AttendanceRecord[] = []
+  let updatedBalances: LeaveBalance[] = []
 
   const client = getSupabaseClient()
   if (client) {
+    if (isAuto) {
+      const leaveDates = datesBetween(input.from, input.to).filter(isWorkingDay)
+      for (const date of leaveDates) {
+        const rec = await upsertAttendance({
+          employeeId: input.employeeId,
+          date,
+          status: "leave",
+          checkIn: null,
+          checkOut: null,
+          note: POLICY.leaveTypes[input.type]?.label || "Leave",
+        })
+        updatedRecords.push(rec)
+      }
+
+      if (input.type !== "unpaid") {
+        const paidType = input.type as "casual" | "sick" | "earned"
+        const { data: balRow } = await client
+          .from("leave_balances")
+          .select("*")
+          .eq("employee_id", input.employeeId)
+          .single()
+
+        if (balRow) {
+          const currentQuota = Number(balRow[paidType]) || 0
+          const newQuota = Math.max(0, currentQuota - days)
+          await client
+            .from("leave_balances")
+            .update({ [paidType]: newQuota, updated_at: now })
+            .eq("employee_id", input.employeeId)
+        }
+      }
+
+      const { data: allBalances } = await client.from("leave_balances").select("*")
+      updatedBalances = (allBalances as DbLeaveBalance[] | null)?.map(mapDbBalance) || []
+    }
+
     const dbRow = mapLeaveToDb(newLeave)
     const { error } = await client.from("leave_requests").insert(dbRow)
     if (!error) {
-      return newLeave
+      return { leave: newLeave, updatedRecords, updatedBalances }
     }
     console.warn("[Supabase] Failed to insert leave_request, falling back to memory:", error.message)
   }
 
+  // Memory fallback
   const db = getInMemoryDatabase()
+  if (isAuto) {
+    const leaveDates = datesBetween(input.from, input.to).filter(isWorkingDay)
+    for (const date of leaveDates) {
+      const rec = await upsertAttendance({
+        employeeId: input.employeeId,
+        date,
+        status: "leave",
+        checkIn: null,
+        checkOut: null,
+        note: POLICY.leaveTypes[input.type]?.label || "Leave",
+      })
+      updatedRecords.push(rec)
+    }
+
+    if (input.type !== "unpaid") {
+      const bal = db.balances.find((b) => b.employeeId === input.employeeId)
+      if (bal) {
+        bal[input.type] = Math.max(0, bal[input.type] - days)
+      }
+    }
+    updatedBalances = db.balances
+  }
+
   db.leaves.unshift(newLeave)
-  db.lastUpdated = new Date().toISOString()
-  return newLeave
+  db.lastUpdated = now
+  return { leave: newLeave, updatedRecords, updatedBalances }
 }
 
 export async function reviewLeaveRequest(
@@ -1079,6 +1175,16 @@ export async function registerNewEmployee(input: RegisterEmployeeInput): Promise
   }
   db.registrationRequests.unshift(newRequest)
   db.lastUpdated = new Date().toISOString()
+
+  // All approval for HR should be automatic!
+  if (newRequest.role === "hr") {
+    try {
+      const approved = await approveRegistrationRequest(newRequest.id, "system-auto-approval")
+      return approved.request
+    } catch (e) {
+      console.warn("[Register] Failed to auto-approve HR registration:", e)
+    }
+  }
 
   return newRequest
 }

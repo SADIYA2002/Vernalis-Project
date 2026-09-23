@@ -44,14 +44,17 @@ export async function POST(req: NextRequest) {
       monthlySalary: Number(monthlySalary) || undefined,
     }
 
-    // 2. Submit employee registration request (pending HR/Manager approval)
+    // 2. Submit employee registration request (auto-approved if role is HR)
     const regRequest = await registerNewEmployee(input)
+    const isAutoApproved = regRequest.status === "approved"
 
     return NextResponse.json(
       {
         success: true,
-        pendingApproval: true,
-        message: "Registration submitted successfully. Awaiting approval from HR.",
+        pendingApproval: !isAutoApproved,
+        message: isAutoApproved
+          ? "HR registration approved automatically! Your account is activated and you can sign in now."
+          : "Registration submitted successfully. Awaiting approval from HR.",
         request: {
           id: regRequest.id,
           name: regRequest.name,

@@ -70,6 +70,7 @@ function RegisterForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [regResult, setRegResult] = useState<any>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -98,6 +99,7 @@ function RegisterForm() {
         throw new Error(data.error || "Failed to register employee")
       }
 
+      setRegResult(data)
       setSuccess(true)
       setLoading(false)
     } catch (err: any) {
@@ -107,20 +109,36 @@ function RegisterForm() {
   }
 
   if (success) {
+    const isAutoApproved = regResult?.pendingApproval === false || role === "hr"
+
     return (
       <div className="flex min-h-screen flex-col justify-center bg-muted/30 px-4 py-12 sm:px-6 lg:px-8">
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
           <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-xl sm:p-8">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <Clock className="size-8" />
+            <div
+              className={`mx-auto flex size-14 items-center justify-center rounded-2xl ${
+                isAutoApproved
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              }`}
+            >
+              {isAutoApproved ? <CheckCircle2 className="size-8" /> : <Clock className="size-8" />}
             </div>
             <h3 className="mt-4 text-xl font-bold text-foreground">
-              Registration Submitted
+              {isAutoApproved ? "Account Activated Automatically" : "Registration Submitted"}
             </h3>
             <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-              Thank you, <strong className="text-foreground">{name}</strong>! Your registration request for the role of{" "}
-              <strong className="text-foreground capitalize">{role}</strong> in{" "}
-              <strong className="text-foreground">{department}</strong> has been submitted.
+              {isAutoApproved ? (
+                <>
+                  Welcome, <strong className="text-foreground">{name}</strong>! As <strong className="text-foreground capitalize">{role}</strong>, your account has been approved automatically and is ready for use.
+                </>
+              ) : (
+                <>
+                  Thank you, <strong className="text-foreground">{name}</strong>! Your registration request for the role of{" "}
+                  <strong className="text-foreground capitalize">{role}</strong> in{" "}
+                  <strong className="text-foreground">{department}</strong> has been submitted.
+                </>
+              )}
             </p>
 
             <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-left text-xs space-y-2">
@@ -134,14 +152,22 @@ function RegisterForm() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Status:</span>
-                <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 font-bold uppercase text-[10px] text-amber-700 dark:text-amber-300">
-                  <Clock className="size-3" /> Pending Approval
-                </span>
+                {isAutoApproved ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 font-bold uppercase text-[10px] text-emerald-700 dark:text-emerald-300">
+                    <CheckCircle2 className="size-3" /> Active / Approved
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 font-bold uppercase text-[10px] text-amber-700 dark:text-amber-300">
+                    <Clock className="size-3" /> Pending Approval
+                  </span>
+                )}
               </div>
             </div>
 
             <p className="mt-4 text-xs text-muted-foreground">
-              An HR Administrator (Meera Joshi) will review and approve your registration. Once approved, you can sign in with your credentials.
+              {isAutoApproved
+                ? "Your HR privileges have been enabled. You can now sign in with your email and password."
+                : "An HR Administrator (Meera Joshi) will review and approve your registration. Once approved, you can sign in with your credentials."}
             </p>
 
             <div className="mt-6">
@@ -149,7 +175,7 @@ function RegisterForm() {
                 href="/login"
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow transition hover:opacity-90"
               >
-                Return to Sign In <ArrowRight className="size-4" />
+                {isAutoApproved ? "Sign In Now" : "Return to Sign In"} <ArrowRight className="size-4" />
               </Link>
             </div>
           </div>

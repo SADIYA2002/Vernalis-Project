@@ -443,12 +443,14 @@ function Corrections() {
 }
 
 function Leave() {
-  const { currentUserId, balances, leaves, submitLeave } = useStore()
+  const { currentUserId, role, getEmployee, balances, leaves, submitLeave } = useStore()
+  const isHrSelf = (role === "hr" || getEmployee(currentUserId)?.baseRole === "hr")
+  const systemToday = getSystemToday()
   const myBalance = balances.find((b) => b.employeeId === currentUserId)
   const myLeaves = leaves.filter((l) => l.employeeId === currentUserId)
   const [type, setType] = useState<LeaveType>("casual")
-  const [from, setFrom] = useState("2026-09-01")
-  const [to, setTo] = useState("2026-09-01")
+  const [from, setFrom] = useState(() => systemToday)
+  const [to, setTo] = useState(() => systemToday)
   const [reason, setReason] = useState("")
 
   function submit() {
@@ -483,6 +485,11 @@ function Leave() {
         <Card>
           <CardHeader title="Apply for leave" />
           <div className="flex flex-col gap-4 p-5">
+            {isHrSelf && (
+              <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-xs font-medium text-primary">
+                As HR, your leave requests are approved automatically and immediately update your leave balance and attendance.
+              </div>
+            )}
             <Field label="Leave type">
               <select value={type} onChange={(e) => setType(e.target.value as LeaveType)} className={inputCls}>
                 {(Object.keys(POLICY.leaveTypes) as LeaveType[]).map((t) => (
@@ -502,7 +509,7 @@ function Leave() {
               disabled={!reason.trim() || to < from}
               className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
             >
-              Apply
+              {isHrSelf ? "Approve & Record Leave" : "Apply"}
             </button>
           </div>
         </Card>
@@ -521,6 +528,11 @@ function Leave() {
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{formatDate(l.from)} – {formatDate(l.to)} · {l.days} day(s)</p>
                   <p className="mt-1.5 text-sm text-foreground/80">{l.reason}</p>
+                  {l.reviewComment ? (
+                    <p className="mt-1.5 rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">
+                      {l.reviewedBy === currentUserId || l.reviewComment.includes("Auto-approved") ? "HR (Self)" : "Approver"}: {l.reviewComment}
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ul>

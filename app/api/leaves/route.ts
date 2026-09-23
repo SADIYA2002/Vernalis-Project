@@ -64,6 +64,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const targetEmployeeId = user.role === "employee" ? user.id : (employeeId || user.id)
+
     // Security check: You can only submit leave requests for yourself
     if (user.role === "employee" && employeeId !== user.id) {
       return NextResponse.json(
@@ -72,15 +74,27 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const leave = await createLeaveRequest({
-      employeeId: user.role === "employee" ? user.id : employeeId,
+    // HR auto-approval rule: All approvals for HR are automatic
+    const isHrForHerself = user.role === "hr" && targetEmployeeId === user.id
+
+    const result = await createLeaveRequest({
+      employeeId: targetEmployeeId,
       type: type as LeaveType,
       from,
       to,
       reason: reason.trim(),
+      autoApprove: isHrForHerself,
+      reviewerId: isHrForHerself ? user.id : undefined,
     })
 
-    return NextResponse.json(leave, { status: 201 })
+    return NextResponse.json(
+      {
+        ...result.leave,
+        updatedRecords: result.updatedRecords,
+        updatedBalances: result.updatedBalances,
+      },
+      { status: 201 },
+    )
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to create leave request" },

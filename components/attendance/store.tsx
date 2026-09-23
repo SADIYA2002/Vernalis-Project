@@ -508,6 +508,8 @@ export function StoreProvider({
     async submitLeave({ employeeId, type, from, to, reason }) {
       const days = datesBetween(from, to).filter(isWorkingDay).length
       const tempId = `lv-${Date.now()}`
+      const isHrSelf = (role === "hr" || getEmployee(employeeId)?.baseRole === "hr") && employeeId === currentUserId
+
       const optimisticLeave: LeaveRequest = {
         id: tempId,
         employeeId,
@@ -516,8 +518,10 @@ export function StoreProvider({
         to,
         days,
         reason,
-        state: "pending",
+        state: isHrSelf ? "approved" : "pending",
         submittedAt: new Date().toISOString(),
+        reviewedBy: isHrSelf ? currentUserId : undefined,
+        reviewComment: isHrSelf ? "Auto-approved for HR" : undefined,
       }
 
       setLeaves((prev) => {
@@ -525,7 +529,51 @@ export function StoreProvider({
         persistCurrent({ leaves: nextLeaves })
         return nextLeaves
       })
-      pushToast("Leave applied", `${days} working day(s) sent for approval.`, "info")
+
+      if (isHrSelf) {
+        if (type !== "unpaid") {
+          setBalances((prev) => {
+            const nextBalances = prev.map((b) => {
+              if (b.employeeId === employeeId) {
+                return {
+                  ...b,
+                  [type]: Math.max(0, (b[type as "casual" | "sick" | "earned"] || 0) - days),
+                }
+              }
+              return b
+            })
+            persistCurrent({ balances: nextBalances })
+            return nextBalances
+          })
+        }
+
+        const leaveDates = datesBetween(from, to).filter(isWorkingDay)
+        setRecords((prev) => {
+          const updated = [...prev]
+          leaveDates.forEach((date) => {
+            const optimisticRecord: AttendanceRecord = {
+              id: `${employeeId}-${date}`,
+              employeeId,
+              date,
+              status: "leave",
+              checkIn: null,
+              checkOut: null,
+              workedHours: 0,
+              lateMinutes: 0,
+              note: POLICY.leaveTypes[type]?.label || "Leave",
+            }
+            const idx = updated.findIndex((r) => r.employeeId === employeeId && r.date === date)
+            if (idx === -1) updated.push(optimisticRecord)
+            else updated[idx] = optimisticRecord
+          })
+          persistCurrent({ records: updated })
+          return updated
+        })
+
+        pushToast("Leave auto-approved", `${days} working day(s) approved automatically for HR.`, "success")
+      } else {
+        pushToast("Leave applied", `${days} working day(s) sent for approval.`, "info")
+      }
 
       try {
         const created = await apiClient.submitLeave({ employeeId, type, from, to, reason })
@@ -534,6 +582,24 @@ export function StoreProvider({
           persistCurrent({ leaves: nextLeaves })
           return nextLeaves
         })
+
+        if (created.updatedRecords && created.updatedRecords.length > 0) {
+          setRecords((prev) => {
+            const updated = [...prev]
+            created.updatedRecords!.forEach((rec) => {
+              const idx = updated.findIndex((r) => r.employeeId === rec.employeeId && r.date === rec.date)
+              if (idx === -1) updated.push(rec)
+              else updated[idx] = rec
+            })
+            persistCurrent({ records: updated })
+            return updated
+          })
+        }
+
+        if (created.updatedBalances && created.updatedBalances.length > 0) {
+          setBalances(created.updatedBalances)
+          persistCurrent({ balances: created.updatedBalances })
+        }
       } catch (err) {
         console.warn("[StoreProvider] API submitLeave error:", err)
       }
